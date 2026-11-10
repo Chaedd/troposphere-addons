@@ -1,0 +1,5 @@
+<Bindings>
+  <Binding name="FARMWAY_ADDPOINT" header="FARMWAY" category="ADDONS">
+    FarmWay:AddPlayerPosition()
+  </Binding>
+</Bindings>

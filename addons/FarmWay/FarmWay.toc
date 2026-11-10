@@ -1,0 +1,16 @@
+## Interface: 16001
+## Title: FarmWay
+## Notes: Routes de farm sur la carte et la minicarte, créées en un clic à partir de GatherMate2.
+## Author: Chaedd
+## Version: 1.0.0
+## SavedVariables: FarmWayDB
+## OptionalDeps: GatherMate2
+
+Locales.lua
+Core.lua
+Optimize.lua
+Share.lua
+Sources.lua
+MapDraw.lua
+Minimap.lua
+UI.lua
