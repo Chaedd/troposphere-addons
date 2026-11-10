@@ -1,9 +1,9 @@
 local _, A = ...
-STORedFlag = A
+RedFlag = A
 A.version = "0.1.0"
 A.defaults = {group=true, target=true, lfg=true, chat=true, tooltip=true}
 local M = A.Model
-function A:Print(s) DEFAULT_CHAT_FRAME:AddMessage("|cffff4545STO Red Flag|r : " .. s) end
+function A:Print(s) DEFAULT_CHAT_FRAME:AddMessage("|cffff4545Red Flag|r : " .. s) end
 function A:Realm() return GetNormalizedRealmName() or GetRealmName():gsub("%s", "") end
 function A:Name(s) return M.Name(s, self:Realm()) end
 function A:UnitName(unit)
@@ -18,8 +18,8 @@ function A:RefreshGuild()
         self.scope, self.records, self.members = scope, nil, {}
         if self.ResetSync then self:ResetSync() end
         if scope then
-            STORedFlagDB.guilds[scope] = STORedFlagDB.guilds[scope] or {records={}}
-            self.records = STORedFlagDB.guilds[scope].records
+            RedFlagDB.guilds[scope] = RedFlagDB.guilds[scope] or {records={}}
+            self.records = RedFlagDB.guilds[scope].records
         end
         self:Changed()
     end
@@ -60,7 +60,7 @@ function A:Tip(owner, name)
     local reports = self:Reports(name)
     if #reports == 0 then return end
     GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("STO Red Flag — " .. M.Plain(name),1,.2,.2)
+    GameTooltip:AddLine("Red Flag — " .. M.Plain(name),1,.2,.2)
     for _,r in ipairs(reports) do
         GameTooltip:AddLine(r.reason,1,1,1,true)
         GameTooltip:AddLine(r.author .. " — " .. date("%d/%m/%Y",r.rev),.65,.65,.65)
@@ -73,11 +73,11 @@ frame:RegisterEvent("ADDON_LOADED")
 frame:SetScript("OnEvent", function(_, event, ...)
     if event == "ADDON_LOADED" then
         local name = ...
-        if name == "STORedFlag" then
-            STORedFlagDB = STORedFlagDB or {}
-            STORedFlagDB.guilds = STORedFlagDB.guilds or {}
-            STORedFlagDB.options = STORedFlagDB.options or {}
-            A.options = STORedFlagDB.options
+        if name == "Red Flag" then
+            RedFlagDB = RedFlagDB or {}
+            RedFlagDB.guilds = RedFlagDB.guilds or {}
+            RedFlagDB.options = RedFlagDB.options or {}
+            A.options = RedFlagDB.options
             for k,v in pairs(A.defaults) do if A.options[k] == nil then A.options[k] = v end end
             frame:RegisterEvent("PLAYER_LOGIN")
             frame:RegisterEvent("PLAYER_GUILD_UPDATE")
@@ -89,8 +89,9 @@ frame:SetScript("OnEvent", function(_, event, ...)
         A:RefreshGuild()
         A:InitSync()
         A:InitDisplays()
+        A:InitMinimap()
         if C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() end
-        A:Print("v" .. A.version .. " chargé. /storf pour ouvrir la liste.")
+        A:Print("v" .. A.version .. " chargé. /redflag pour ouvrir la liste.")
     elseif event == "GUILD_ROSTER_UPDATE" or event == "PLAYER_GUILD_UPDATE" then
         A:RefreshGuild()
     end

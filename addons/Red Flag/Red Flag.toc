@@ -1,11 +1,13 @@
 ## Interface: 16001
-## Title: STO Red Flag
+## Title: Red Flag
+## IconTexture: Interface\AddOns\Red Flag\flag
 ## Notes: Signalements partagés entre membres de guilde.
 ## Author: STO
 ## Version: 0.1.0
-## SavedVariables: STORedFlagDB
+## SavedVariables: RedFlagDB
 Model.lua
 Core.lua
 Sync.lua
 UI.lua
 Display.lua
+Minimap.lua

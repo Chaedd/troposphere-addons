@@ -1,6 +1,6 @@
 local _, A = ...
 local M = A.Model
-local PREFIX = "STORF1"
+local PREFIX = "REDFLAG1"
 local queue, first, last, serial = {}, 1, 0, 0
 local buffers, requests, rates = {}, {}, {}
 local offers, transfers = {}, {}

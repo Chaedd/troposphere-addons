@@ -1,20 +1,21 @@
-# STO Red Flag — 0.1.0
+# Red Flag — 0.1.0
 
 Première version pour **World of Warcraft: Forever 1.60.1, build 70862, interface 16001** (version confirmée en jeu par le propriétaire du projet).
 
 ## Installation
 
-Fermer WoW, extraire `dist/STORedFlag-0.1.0.zip` dans le dossier `Interface/AddOns` du client Forever. On doit obtenir `Interface/AddOns/STORedFlag/STORedFlag.toc`, sans dossier intermédiaire supplémentaire. Relancer le jeu puis activer STO Red Flag dans la liste des addons.
+Fermer WoW, extraire `dev/dist/Red Flag-0.1.0.zip` dans le dossier `Interface/AddOns` du client Forever. On doit obtenir `Interface/AddOns/Red Flag/Red Flag.toc`, sans dossier intermédiaire supplémentaire. Relancer le jeu puis activer Red Flag dans la liste des addons.
 
-Le dossier source `STORedFlag` peut aussi être copié directement dans `Interface/AddOns`.
+Le dossier source `Red Flag` peut aussi être copié directement dans `Interface/AddOns`, en excluant `dev/` et les fichiers Git.
 
 ## Utilisation
 
-- `/storf` ou `/redflag` : ouvrir la fenêtre de liste et les options.
-- `/storf cible` : préremplir le nom du joueur ciblé, puis saisir le motif.
-- `/storf add Nom-Royaume motif` : créer ou modifier son signalement.
-- `/storf remove Nom-Royaume` : retirer son propre signalement.
-- `/storf sync` : demander une synchronisation (au plus une demande par minute).
+- Icône de drapeau rouge autour de la minicarte : cliquer pour ouvrir ou fermer la liste ; glisser pour la déplacer. Sa position est mémorisée.
+- `/redflag` ou `/rf` : ouvrir la fenêtre de liste et les options.
+- `/redflag cible` : préremplir le nom du joueur ciblé, puis saisir le motif.
+- `/redflag add Nom-Royaume motif` : créer ou modifier son signalement.
+- `/redflag remove Nom-Royaume` : retirer son propre signalement.
+- `/redflag sync` : demander une synchronisation (au plus une demande par minute).
 
 Dans la fenêtre : rechercher un joueur, faire défiler avec la molette, survoler pour voir tous les motifs, cliquer pour sélectionner son nom. Le motif est obligatoire et limité à 200 **octets** (les caractères accentués en utilisent plusieurs). Les options sont propres à chaque installation du compte ; les signalements sont attribués au personnage qui les crée.
 
@@ -27,7 +28,7 @@ Chaque membre peut publier un signalement par joueur. Plusieurs auteurs peuvent 
 - Chat : drapeau après le nom de l'auteur, au début du message. Survol pour les motifs ; clic avec le comportement standard d'un lien de joueur. L'option agit sur les nouveaux messages ; les anciennes lignes restent telles qu'elles ont été affichées.
 - Infobulle standard d'un joueur : ajout des motifs.
 
-Les cinq emplacements s'activent indépendamment dans la fenêtre `/storf`.
+Les cinq emplacements s'activent indépendamment dans la fenêtre `/redflag`.
 
 **Limites de cette version :** les drapeaux des cadres (groupe, raid, cible, focus et recherche) sont masqués pendant le combat et se réaffichent ensuite. Les noms que le client protège ne sont pas exploités. Les interfaces de remplacement (ElvUI, Shadowed Unit Frames, etc.) n'ont pas d'adaptateur. L'intégration graphique et les échanges réels restent à valider dans le client Forever : les tests automatisés ne remplacent pas une session en jeu.
 
@@ -47,10 +48,10 @@ Les expéditeurs sont vérifiés contre le roster de guilde local. Un ajout en d
 
 ## Vérification en jeu (à effectuer avant diffusion à toute la guilde)
 
-1. Installer sur deux comptes membres de la même guilde et ouvrir `/storf` : aucune erreur Lua.
+1. Installer sur deux comptes membres de la même guilde et ouvrir `/redflag` : aucune erreur Lua.
 2. Avec A, signaler une cible de test avec un motif reconnaissable. Avec B, vérifier le motif et l'auteur dans la liste puis au survol du drapeau.
 3. Avec B, ajouter son propre motif au même joueur. Avec A, retirer le sien : le motif de B doit rester.
-4. Déconnecter B, ajouter puis retirer un signalement avec A. Reconnecter B, attendre l'échange ou lancer `/storf sync` : l'ancien signalement ne doit pas revenir.
+4. Déconnecter B, ajouter puis retirer un signalement avec A. Reconnecter B, attendre l'échange ou lancer `/redflag sync` : l'ancien signalement ne doit pas revenir.
 5. Vérifier cible, groupe, raid, annonces et candidatures de recherche, et chat avec un personnage de test consentant. Tester chaque option d'affichage.
 6. Entrer puis sortir d'un combat : drapeaux de cadres masqués puis rétablis ; aucune erreur d'action interdite.
 7. Recharger avec `/reload` : les données et options doivent persister.
@@ -59,7 +60,7 @@ Pour afficher les erreurs du client pendant cette recette : `/console scriptErro
 
 ## Tests locaux
 
-Depuis la racine, avec Lua 5.1+ : `lua tests/run.lua`. Ou installer le runtime de développement isolé : `npm install --prefix .tools --no-save --ignore-scripts fengari-node-cli`, puis lancer `./.tools/node_modules/.bin/fengari tests/run.lua` (`fengari.cmd` sous Windows). Le script doit terminer avec `PASS` ; le CLI Fengari peut renvoyer un code processus nul même en cas d'échec d'assertion.
+Depuis la racine, avec Lua 5.1+ : `lua dev/tests/run.lua`. Ou installer le runtime de développement isolé : `npm install --prefix dev/.tools --no-save --ignore-scripts fengari-node-cli`, puis lancer `./dev/.tools/node_modules/.bin/fengari dev/tests/run.lua` (`fengari.cmd` sous Windows). Le script doit terminer avec `PASS` ; le CLI Fengari peut renvoyer un code processus nul même en cas d'échec d'assertion.
 
 Tests : validation et sérialisation UTF-8, limites de stockage, isolation entre royaumes, conflits, plusieurs auteurs, retraits persistants, simulation de clients connectés/déconnectés, synchronisation bidirectionnelle négociée, paquets hors ordre, doublons, filtrage des expéditeurs et auteurs, refus d'historiques non sollicités, séparation des guildes, compilation de tous les fichiers Lua. Aucune validation visuelle en client n'est revendiquée.
 
