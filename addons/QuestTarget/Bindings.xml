@@ -1,0 +1,4 @@
+<Bindings>
+	<Binding name="CLICK QuestTargetSuperButton:LeftButton" header="QUESTTARGET" category="ADDONS">
+	</Binding>
+</Bindings>

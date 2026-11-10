@@ -1,0 +1,11 @@
+## Interface: 16001
+## Title: STO Red Flag
+## Notes: Signalements partagés entre membres de guilde.
+## Author: STO
+## Version: 0.1.0
+## SavedVariables: STORedFlagDB
+Model.lua
+Core.lua
+Sync.lua
+UI.lua
+Display.lua
