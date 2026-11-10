@@ -1,0 +1,74 @@
+# Règles tirées de CONTRIBUTING.md (section « Fichiers requis »).
+# Tout dossier de addons/ est copié tel quel chez chaque joueur :
+# on n'y garde que ce dont le jeu a besoin.
+# Les fichiers de la racine (README.md, CONTRIBUTING.md, icon.png) ne sont pas concernés.
+
+# --- Documentation (inutile en jeu) ---
+# Garder LICENSE : il n'est pas ignoré.
+/addons/**/README*
+/addons/**/CHANGELOG*
+/addons/**/docs/
+/addons/**/doc/
+
+# --- Fichiers d'outils de développement ---
+/addons/**/.gitignore
+/addons/**/.gitattributes
+/addons/**/.editorconfig
+/addons/**/.pkgmeta
+/addons/**/.git/
+/addons/**/.github/
+/addons/**/.vscode/
+/addons/**/.idea/
+
+# --- Captures d'écran et sources de graphisme ---
+# WoW n'utilise que .tga et .blp pour les textures.
+/addons/**/*.png
+/addons/**/*.jpg
+/addons/**/*.jpeg
+/addons/**/*.gif
+/addons/**/*.webp
+/addons/**/*.psd
+/addons/**/*.xcf
+/addons/**/*.blend
+/addons/**/*.kra
+/addons/**/*.ai
+
+# --- Tests, scripts de build, sauvegardes ---
+/addons/**/tests/
+/addons/**/test/
+/addons/**/spec/
+/addons/**/build/
+/addons/**/dist/
+/addons/**/node_modules/
+/addons/**/.tools/
+/addons/**/Makefile
+/addons/**/*.sh
+/addons/**/*.ps1
+/addons/**/*.py
+/addons/**/*.bak
+/addons/**/*.orig
+/addons/**/*.tmp
+/addons/**/*~
+
+# --- Archives et programmes : jamais dans un addon ---
+*.zip
+*.rar
+*.7z
+*.exe
+*.dll
+*.bat
+*.cmd
+
+# --- Réglages des joueurs ---
+WTF/
+SavedVariables/
+
+# --- Fichiers personnels (le dépôt est public) ---
+*.log
+.env
+.env.*
+
+# --- Fichiers créés par Windows ou macOS ---
+Thumbs.db
+desktop.ini
+.DS_Store
