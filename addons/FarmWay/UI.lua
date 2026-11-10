@@ -127,8 +127,8 @@ local function refreshList(mapID)
     row.label:SetText(name)
     row.count:SetText(#r.points .. " " .. L["points"])
     row.swatch.tex:SetColorTexture(r.color[1], r.color[2], r.color[3], 1)
-    row.visible:SetChecked(r.visible)
-    row.sel:SetShown(FW:IsSelected(mapID, name))
+    row.visible:SetChecked(r.visible and true or false)
+    row.sel:SetShown(FW:IsSelected(mapID, name) and true or false)
     row:Show()
   end
   for i = #names + 1, #routeRows do routeRows[i]:Hide() end
@@ -142,13 +142,14 @@ local function refreshList(mapID)
   else
     listView.selTitle:SetText("|cff999999" .. L["Select a route in the list."] .. "|r")
   end
+  local editing = (hasSel and FW.editing) and true or false
   for _, b in ipairs(listView.selButtons) do b:SetEnabled(hasSel) end
-  listView.refresh:SetEnabled(hasSel and route.sources ~= nil and ns.Sources.Available())
-  listView.optimize:SetEnabled(hasSel and #route.points >= 4)
+  listView.refresh:SetEnabled((hasSel and route.sources ~= nil and ns.Sources.Available()) and true or false)
+  listView.optimize:SetEnabled((hasSel and #route.points >= 4) and true or false)
   listView.edit:SetEnabled(hasSel)
-  listView.edit:SetChecked(hasSel and FW.editing)
-  listView.editHelp:SetShown(hasSel and FW.editing)
-  listView.minimap:SetChecked(FW.db.settings.minimap)
+  listView.edit:SetChecked(editing)
+  listView.editHelp:SetShown(editing)
+  listView.minimap:SetChecked(FW.db.settings.minimap and true or false)
 end
 
 local function buildList()
