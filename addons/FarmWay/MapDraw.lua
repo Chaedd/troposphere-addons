@@ -6,8 +6,31 @@ local M = {}
 ns.MapDraw = M
 
 local DOT_TEXTURE = "Interface\\CHARACTERFRAME\\TempPortraitAlphaMask"
+local LEVEL_NAME = "PIN_FRAME_LEVEL_FARMWAY"
 local lines, dots = {}, {}
-local frame
+local frame, levels
+
+-- Le terrain de la carte est dessiné sur des niveaux de calque gérés par la carte.
+-- On demande le nôtre juste au-dessus du surlignage des zones, sous les icônes.
+local function setupLevel()
+  levels = WorldMapFrame.GetPinFrameLevelsManager and WorldMapFrame:GetPinFrameLevelsManager()
+  if levels and levels.InsertFrameLevelAbove then
+    local ok = pcall(levels.InsertFrameLevelAbove, levels, LEVEL_NAME, "PIN_FRAME_LEVEL_MAP_HIGHLIGHT", 1)
+    if not ok then levels = nil end
+  else
+    levels = nil
+  end
+end
+
+local function updateLevel(canvas)
+  local level
+  if levels then
+    local ok, value = pcall(levels.GetValidFrameLevel, levels, LEVEL_NAME)
+    if ok and value then level = value end
+  end
+  -- Sans gestionnaire de niveaux : assez haut pour passer au-dessus du terrain.
+  frame:SetFrameLevel(level or (canvas:GetFrameLevel() + 500))
+end
 
 local function acquireLine(i)
   local line = lines[i]
@@ -50,6 +73,7 @@ end
 
 function M:Refresh()
   if not frame then return end
+  updateLevel(frame:GetParent())
   local nLines, nDots = 0, 0
   local mapID = WorldMapFrame:IsShown() and WorldMapFrame:GetMapID()
   local w, h = frame:GetSize()
@@ -76,7 +100,7 @@ function M:Refresh()
           line:SetEndPoint("TOPLEFT", frame, b[1] * w, -b[2] * h)
           line:Show()
         end
-        local editable = selected and FW.editing
+        local editable = (selected and FW.editing) and true or false
         local size = (editable and 14 or (selected and 9 or 6)) * unit
         for i = 1, n do
           nDots = nDots + 1
@@ -127,7 +151,8 @@ function M:Init()
     local canvas = scroll.Child or scroll
     frame = CreateFrame("Frame", nil, canvas)
     frame:SetAllPoints(canvas)
-    frame:SetFrameLevel(canvas:GetFrameLevel() + 5)
+    setupLevel()
+    updateLevel(canvas)
     frame:SetScript("OnSizeChanged", function() M:Refresh() end)
 
     WorldMapFrame:HookScript("OnShow", function() M:Refresh() end)
