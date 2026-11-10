@@ -17,12 +17,12 @@ local function edit(parent,x,y,width,max)
     return e
 end
 function A:CreateUI()
-    local f=CreateFrame("Frame","STORedFlagWindow",UIParent,"BasicFrameTemplateWithInset")
+    local f=CreateFrame("Frame","RedFlagWindow",UIParent,"BasicFrameTemplateWithInset")
     self.window=f
     f:SetSize(660,615); f:SetPoint("CENTER"); f:SetMovable(true); f:EnableMouse(true)
     f:RegisterForDrag("LeftButton"); f:SetScript("OnDragStart",f.StartMoving); f:SetScript("OnDragStop",f.StopMovingOrSizing)
-    f.TitleText:SetText("STO Red Flag — signalements de guilde")
-    tinsert(UISpecialFrames,"STORedFlagWindow")
+    f.TitleText:SetText("Red Flag : signalements de guilde")
+    tinsert(UISpecialFrames,"RedFlagWindow")
     label(f,"Joueur (Nom-Royaume si nécessaire)",20,-40)
     f.name=edit(f,25,-62,370,100)
     button(f,"Utiliser ma cible",415,-62,215,function()
@@ -101,9 +101,9 @@ function A:Open(name)
     self.window:Show()
     if name then self.window.name:SetText(name); self.window.reason:SetFocus() end
 end
-SLASH_STORF1="/storf"
-SLASH_STORF2="/redflag"
-SlashCmdList.STORF=function(input)
+SLASH_REDFLAG1="/redflag"
+SLASH_REDFLAG2="/rf"
+SlashCmdList.REDFLAG=function(input)
     local cmd,rest=input:match("^(%S+)%s*(.-)$")
     if cmd=="sync" then A:RequestSync(true)
     elseif cmd=="target" or cmd=="cible" then
@@ -111,7 +111,7 @@ SlashCmdList.STORF=function(input)
         if name then A:Open(name) else A:Print("Cible un joueur.") end
     elseif cmd=="add" then
         local name,reason=rest:match("^(%S+)%s+(.+)$")
-        if name then A:SetReport(name,reason,false) else A:Print("/storf add Nom-Royaume motif") end
+        if name then A:SetReport(name,reason,false) else A:Print("/redflag add Nom-Royaume motif") end
     elseif cmd=="remove" then A:SetReport(rest,"",true)
     else A:Open() end
 end

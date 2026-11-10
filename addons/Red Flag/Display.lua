@@ -1,7 +1,7 @@
 local _, A = ...
 local M=A.Model
 local badges,bindings,hooks={},{},{}
-local texture="Interface\\AddOns\\STORedFlag\\flag"
+local texture="Interface\\AddOns\\Red Flag\\flag"
 local function safeName(name)
     if issecretvalue and issecretvalue(name) then return nil end
     if type(name)=="string" then return A:Name(name) end
@@ -15,13 +15,16 @@ local function badge(owner,name,option)
     if not b then
         -- Independent overlay: no scripts, sizes or anchors on protected Blizzard unit buttons are changed.
         b=CreateFrame("Button",nil,UIParent)
-        b:SetSize(16,16); b:SetFrameStrata("HIGH")
+        b:SetSize(16,16)
         b.icon=b:CreateTexture(nil,"ARTWORK"); b.icon:SetAllPoints(); b.icon:SetTexture(texture)
         b:SetScript("OnEnter",function(self) A:Tip(self,self.target) end)
         b:SetScript("OnLeave",function() GameTooltip:Hide() end)
         b:SetScript("OnClick",function(self) A:Open(self.target) end)
         badges[owner]=b
     end
+    -- Follow the owner's stacking order without changing protected unit frames.
+    b:SetFrameStrata(owner:GetFrameStrata())
+    b:SetFrameLevel(owner:GetFrameLevel()+1)
     b.target=name
     b:ClearAllPoints(); b:SetPoint("RIGHT",owner,"LEFT",-2,0); b:Show()
 end
@@ -94,8 +97,8 @@ function A:InitDisplays()
         ChatFrame_AddMessageEventFilter("CHAT_MSG_"..event,filter)
     end
     local function chatHook(chat)
-        if not chat or chat.storfHook then return end
-        chat.storfHook=true
+        if not chat or chat.redFlagHook then return end
+        chat.redFlagHook=true
         chat:HookScript("OnHyperlinkEnter",function(self,link)
             if not A.options.chat or type(link)~="string" then return end
             local name=link:match("^player:([^:]+)")
@@ -114,7 +117,7 @@ function A:InitDisplays()
             local name=unit and A:UnitName(unit)
             if not name then return end
             for _,r in ipairs(A:Reports(name)) do
-                tip:AddLine("STO Red Flag : "..r.reason,1,.2,.2,true)
+                tip:AddLine("Red Flag : "..r.reason,1,.2,.2,true)
                 tip:AddLine(r.author,.65,.65,.65)
             end
         end)
