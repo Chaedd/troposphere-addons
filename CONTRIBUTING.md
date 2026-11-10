@@ -35,11 +35,39 @@ Règles :
 - **Pas de dossier en trop** : pas de `addons/MonAddon/MonAddon/MonAddon.toc`.
 - **Pas de `.zip`** : on met les fichiers décompressés.
 - Un addon livré en plusieurs dossiers (par exemple `MonAddon` et `MonAddon_Options`) donne **un dossier par addon** dans `addons/`. Le joueur les installe séparément.
-- Rien que l'addon lui-même : pas de `WTF/`, pas de fichiers `SavedVariables`, pas d'`.exe`, ni de fichiers personnels.
+
+## Fichiers requis
+
+Tout le dossier est copié chez chaque joueur : n'y mets **que ce dont le jeu a besoin**.
+
+**Obligatoire :**
+
+- **`MonAddon.toc`**, avec le même nom que le dossier. C'est le seul fichier imposé.
+
+**Ce que le jeu utilise :**
+
+- Les **`.lua`** et **`.xml`** de l'addon. **Chacun doit être listé dans le `.toc`**, sinon WoW ne le charge pas, même s'il est bien installé.
+- Les **médias** utilisés par le code : textures (`.tga`, `.blp`), sons (`.ogg`, `.mp3`), polices (`.ttf`).
+- Les **bibliothèques** embarquées (dossier `Libs/` avec LibStub, Ace3…), elles aussi listées dans le `.toc`.
+
+**À ne pas mettre :**
+
+| À éviter | Pourquoi |
+| --- | --- |
+| `README.md`, `CHANGELOG.md`, documentation | Inutile en jeu. Décris l'addon dans `## Notes` et le changement dans ta pull request. |
+| `.gitignore`, `.gitattributes`, `.editorconfig`, `.pkgmeta`, dossiers `.git/`, `.github/`, `.vscode/`, `.idea/` | Fichiers d'outils de développement. |
+| Captures d'écran, fichiers sources de graphisme (`.psd`, `.xcf`, `.blend`…) | Gros et inutiles en jeu. Mets les captures dans la pull request. |
+| Tests, scripts de build, fichiers de sauvegarde (`.bak`, `~`) | Inutiles en jeu. |
+| `Thumbs.db`, `desktop.ini`, `.DS_Store` | Fichiers créés automatiquement par Windows ou macOS. |
+| `.zip`, `.exe`, `.dll`, `.bat` | Archives et programmes : jamais dans un addon. |
+| `WTF/`, fichiers `SavedVariables` | Ce sont les réglages d'un joueur, pas l'addon. |
+| Fichiers personnels (logs, notes, identifiants) | Le dépôt est public. |
+
+Seule exception : garde le fichier **`LICENSE`** si la licence de l'addon impose de le distribuer avec.
 
 ## Le fichier `.toc`
 
-Troposphère affiche les informations du `.toc`. Remplis au minimum :
+Troposphère affiche les informations du `.toc`. Exemple complet :
 
 ```
 ## Interface: 120000
@@ -47,7 +75,14 @@ Troposphère affiche les informations du `.toc`. Remplis au minimum :
 ## Notes: Une phrase qui explique ce que fait l'addon.
 ## Author: TonPseudo
 ## Version: 1.0.0
+## SavedVariables: MonAddonDB
+
+Libs\LibStub\LibStub.lua
+MonAddon.lua
+MonAddon.xml
 ```
+
+Les lignes `##` sont les informations ; les lignes suivantes sont les fichiers chargés par WoW, dans l'ordre et avec un chemin relatif au dossier de l'addon. `## SavedVariables` est facultatif : c'est le nom de la variable où l'addon sauvegarde ses réglages.
 
 - **Title** : le nom affiché dans l'app. Les codes couleur WoW (`|cff...|r`) sont retirés à l'affichage.
 - **Notes** : la description affichée sous le nom.
@@ -102,8 +137,9 @@ Supprime son dossier dans une pull request. Attention : l'addon disparaît de la
 - [ ] Le dossier et le `.toc` ont le même nom.
 - [ ] `## Title`, `## Notes`, `## Author` et `## Version` sont remplis.
 - [ ] `## Version` est augmentée s'il s'agit d'une mise à jour.
+- [ ] Chaque `.lua` et `.xml` est listé dans le `.toc`.
 - [ ] L'addon a été testé en jeu, sans erreur Lua.
-- [ ] Pas de `.zip`, de `SavedVariables`, d'`.exe` ni de fichiers personnels.
+- [ ] Aucun fichier superflu : pas de README, `.gitignore`, `.git/`, captures, `.zip`, `.exe`, `SavedVariables` ni fichiers personnels (voir [Fichiers requis](#fichiers-requis)).
 - [ ] Tu as le droit de publier cet addon (c'est le tien, ou sa licence l'autorise).
 
 Ce dépôt est **public** : n'importe qui peut lire le code des addons.
