@@ -12,6 +12,6 @@ Les addons de ce dépôt s'installent et se mettent à jour en un clic avec **Tr
 
 ## Publier un addon
 
-Chaque sous-dossier de `addons/` est un addon, copié tel quel dans `Interface\AddOns`. Le titre, la description, l'auteur et la version affichés dans l'app viennent du `.toc` (`## Title:`, `## Notes:`, `## Author:`, `## Version:`).
+Chaque sous-dossier de `addons/` est un addon, copié tel quel dans `Interface\AddOns`. Tout ce qui est fusionné dans `main` est publié immédiatement chez les joueurs.
 
-Dès qu'un changement est poussé sur `main`, Troposphère propose la mise à jour aux joueurs.
+**Contributeurs : lisez le [guide de publication](CONTRIBUTING.md)** avant d'ajouter ou de mettre à jour un addon.
