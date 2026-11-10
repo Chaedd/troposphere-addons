@@ -1,7 +1,0 @@
-## Interface: 120000
-## Title: Hello Forever
-## Notes: Addon d'exemple : affiche un message à la connexion pour vérifier que l'installation marche.
-## Author: Chaedd
-## Version: 1.0.0
-
-HelloForever.lua
