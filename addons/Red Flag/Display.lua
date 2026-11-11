@@ -2,6 +2,13 @@ local _, A = ...
 local M=A.Model
 local badges,bindings,hooks={},{},{}
 local texture="Interface\\AddOns\\Red Flag\\flag"
+function A:GetDisplayDebugState()
+    local state={badges=0,visible=0,bindings=0}
+    for _,b in pairs(badges) do state.badges=state.badges+1; if b:IsShown() then state.visible=state.visible+1 end end
+    for _ in pairs(bindings) do state.bindings=state.bindings+1 end
+    for _,name in ipairs({"LFGListSearchEntry_Update","LFGListApplicationViewer_UpdateApplicantMember"}) do state[name]=hooks[name] or false end
+    return state
+end
 local function safeName(name)
     if issecretvalue and issecretvalue(name) then return nil end
     if type(name)=="string" then return A:Name(name) end

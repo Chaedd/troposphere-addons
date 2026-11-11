@@ -23,7 +23,7 @@ function A:CreateUI()
     f:RegisterForDrag("LeftButton"); f:SetScript("OnDragStart",f.StartMoving); f:SetScript("OnDragStop",f.StopMovingOrSizing)
     f.TitleText:SetText("Red Flag : signalements de guilde")
     tinsert(UISpecialFrames,"RedFlagWindow")
-    label(f,"Joueur (Nom-Royaume si nécessaire)",20,-40)
+    label(f,"Joueur (Prénom-Nomdefamille)",20,-40)
     f.name=edit(f,25,-62,370,100)
     button(f,"Utiliser ma cible",415,-62,215,function()
         local name=UnitIsPlayer("target") and A:UnitName("target")
@@ -71,6 +71,7 @@ function A:CreateUI()
         check:SetChecked(A.options[key])
         check:SetScript("OnClick",function(self) A.options[key]=self:GetChecked(); A:Changed() end)
     end
+    button(f,"Debug / rapport",435,-568,195,function() A:OpenDebug() end)
     f:SetScript("OnShow",function() A:RefreshUI() end)
 end
 function A:RefreshUI()
@@ -105,13 +106,18 @@ SLASH_REDFLAG1="/redflag"
 SLASH_REDFLAG2="/rf"
 SlashCmdList.REDFLAG=function(input)
     local cmd,rest=input:match("^(%S+)%s*(.-)$")
-    if cmd=="sync" then A:RequestSync(true)
+    if cmd=="debug" then
+        if rest=="on" then A:SetDebug(true)
+        elseif rest=="off" then A:SetDebug(false)
+        elseif rest=="clear" then A:ClearDebug() end
+        A:OpenDebug()
+    elseif cmd=="sync" then A:RequestSync(true)
     elseif cmd=="target" or cmd=="cible" then
         local name=UnitIsPlayer("target") and A:UnitName("target")
         if name then A:Open(name) else A:Print("Cible un joueur.") end
     elseif cmd=="add" then
         local name,reason=rest:match("^(%S+)%s+(.+)$")
-        if name then A:SetReport(name,reason,false) else A:Print("/redflag add Nom-Royaume motif") end
+        if name then A:SetReport(name,reason,false) else A:Print("/redflag add Prénom-Nomdefamille motif") end
     elseif cmd=="remove" then A:SetReport(rest,"",true)
     else A:Open() end
 end

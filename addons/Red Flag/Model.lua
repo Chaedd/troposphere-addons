@@ -24,6 +24,24 @@ function M.Key(name)
     return (strlower or string.lower)(name)
 end
 
+-- Forever names are first name + surname, not Name-Realm. Keep the v0.1.0
+-- hyphenated storage identity, but accept native roster/chat names and the
+-- extra realm suffix supplied by CHAT_MSG_ADDON.
+function M.CharacterName(s)
+    if type(s) ~= "string" or #s > 100 then return nil end
+    s = s:match("^%s*(.-)%s*$")
+    local first, surname, suffix = s:match("^([^%s%-]+)[ %-]([^%s%-]+)(.*)$")
+    if not first or (suffix ~= "" and not suffix:match("^%-[^%s|%%:%c]+$")) then return nil end
+    local name = first .. "-" .. surname
+    if M.Name(name) ~= name then return nil end
+    return name
+end
+
+function M.WhisperTarget(name)
+    local canonical = M.CharacterName(name)
+    return canonical and canonical:gsub("%-", " ")
+end
+
 function M.Valid(r)
     return type(r) == "table" and type(r.target) == "string" and type(r.author) == "string"
         and M.Name(r.target) == r.target and M.Name(r.author) == r.author
