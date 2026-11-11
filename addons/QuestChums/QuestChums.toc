@@ -1,0 +1,15 @@
+## Interface: 16001, 120005, 120007
+## Title: QuestChums
+## Notes: Pour chaque quête de ton journal, montre qui dans ta guilde l'a aussi, ne l'a pas ou peut la prendre.
+## Author: Chaedd
+## IconTexture: Interface\Icons\Achievement_GuildPerk_EverybodysFriend
+## Version: 1.0.0
+## SavedVariables: QuestChumsDB
+## SavedVariablesPerCharacter: QuestChumsCharDB
+
+Model.lua
+Core.lua
+Quests.lua
+Sync.lua
+UI.lua
+Minimap.lua
