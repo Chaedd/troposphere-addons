@@ -26,7 +26,8 @@ local USE_DB = (select(4, GetBuildInfo()) or 0) < 20000
 local ICON = "Interface\\Icons\\Ability_Hunter_SniperShot"
 local BUTTON_SIZE = 16
 local MAX_MACRO = 255
-local MARK_BUTTON = "QuestTargetMarkButton"
+-- nom court : il est répété dans chaque macro, où chaque caractère compte
+local MARK_BUTTON = "QTMark"
 
 BINDING_HEADER_QUESTTARGET = "QuestTarget"
 _G["BINDING_NAME_CLICK QuestTargetSuperButton:LeftButton"] = "Cibler un mob de la quête suivie"
@@ -252,6 +253,7 @@ end
 -- Boutons relais : chacun porte la suite de la macro (moins de 255 caractères).
 local MAX_CHUNKS = 4   -- bouton + 3 relais, de quoi couvrir une dizaine de mobs
 local chainCount = 0
+local chainRunAt, mainClickAt, mainClickChained
 local CLICK_LEN = #"\n/click QTChain000 LeftButton 0"
 
 local function NewChainButton()
@@ -265,34 +267,35 @@ local function NewChainButton()
 	c:SetAttribute("useOnKeyDown", false)
 	c:SetAttribute("type1", "macro")
 	c.clickLine = "\n/click " .. name .. " LeftButton 0"
+	-- pour /qtg debug : savoir si le jeu exécute bien la macro d'un relais
+	c:HookScript("OnClick", function() chainRunAt = GetTime() end)
 	return c
 end
 
--- Découpe en morceaux de 255 caractères au plus. La fin (tail) est toujours
--- gardée ; si tout ne tient pas, ce sont les dernières lignes (le second
--- passage sur les noms) qui sont abandonnées.
+-- Découpe en morceaux de 255 caractères au plus. La fin (tail : marquage et
+-- reprise de l'ancienne cible) reste dans le bouton principal, APRÈS l'appel
+-- aux relais : elle s'exécute même si le jeu ne lance pas les macros des relais
+-- (en 1.4.0 elle était dans le dernier relais et le signe n'était plus posé).
+-- Le meilleur (barres de vie, premier passage sur les noms) va donc dans le
+-- bouton principal ; si tout ne tient pas, les dernières lignes sont abandonnées.
 local function SplitMacro(units, tail)
 	local chunks, cur = {}, nil
 	local function size(u) return (cur and #cur + 1 or 0) + #u end
-	local function reserve()
-		return (#chunks + 1 == MAX_CHUNKS) and (#tail + 1) or CLICK_LEN
+	local function budget()
+		return MAX_MACRO - CLICK_LEN - (#chunks == 0 and (#tail + 1) or 0)
 	end
 	for _, u in ipairs(units) do
-		if cur and size(u) + reserve() > MAX_MACRO then
+		if cur and size(u) > budget() then
 			if #chunks + 1 == MAX_CHUNKS then break end
 			chunks[#chunks + 1] = cur
 			cur = nil
 		end
-		if size(u) + reserve() <= MAX_MACRO then
+		if size(u) <= budget() then
 			cur = cur and (cur .. "\n" .. u) or u
 		end
 	end
-	if cur and size(tail) > MAX_MACRO then
-		chunks[#chunks + 1] = cur
-		cur = nil
-	end
-	cur = cur and (cur .. "\n" .. tail) or tail
-	chunks[#chunks + 1] = cur
+	if cur then chunks[#chunks + 1] = cur end
+	if #chunks == 0 then chunks[1] = "/cleartarget" end
 	return chunks
 end
 
@@ -362,6 +365,10 @@ local function AcquireButton()
 	b:HookScript("OnClick", function(self, button, down)
 		if button == "RightButton" then
 			if not down then PrintNames(self) end
+		elseif button == "LeftButton" and self.chainUsed then
+			-- appelé après la macro : si un relais a tourné, chainRunAt vaut GetTime()
+			mainClickAt = GetTime()
+			mainClickChained = true
 		end
 	end)
 	return b
@@ -370,7 +377,7 @@ end
 local function SetMacro(b, names)
 	local units, tail, free = BuildMacro(names)
 	local chunks = SplitMacro(units, tail)
-	local macro = table.concat(chunks, "\n||\n")
+	local macro = table.concat(chunks, "\n||\n") .. "\n||\n" .. tail
 	if b.macro ~= macro then
 		b.chain = b.chain or {}
 		local targets = { b }
@@ -381,10 +388,12 @@ local function SetMacro(b, names)
 		for i, chunk in ipairs(chunks) do
 			local text = chunk
 			if i < #chunks then text = text .. targets[i + 1].clickLine end
+			if i == 1 then text = text .. "\n" .. tail end
 			targets[i]:SetAttribute("macrotext1", text)
 		end
 		b.macro = macro
 	end
+	b.chainUsed = #chunks > 1
 	b.names = names
 	b.free = free
 end
@@ -819,6 +828,11 @@ SlashCmdList["QUESTTARGET"] = function(msg)
 	elseif msg == "options" or msg == "" then
 		ToggleOptions()
 	elseif msg == "debug" then
+		if mainClickChained then
+			Print("relais au dernier clic : " .. (chainRunAt == mainClickAt and "exécutés" or "|cffff4040NON exécutés|r"))
+		else
+			Print("relais : pas encore de clic sur une quête qui en utilise")
+		end
 		Print(("barres de vie : %s, mobs vivants libres vus : %d"):format(platesOn and "oui" or "non", #plates))
 		for _, p in ipairs(plates) do
 			Print(("  %s = %s%s%s"):format(p.unit, p.name, p.busy and " (en combat)" or "", p.near and " (proche)" or ""))
