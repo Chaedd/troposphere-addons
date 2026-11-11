@@ -1,0 +1,43 @@
+# Annonce sur Discord chaque addon dont la version (## Version du .toc) change
+# sur main. Une modification sans changement de version n'est pas annoncée.
+# Il faut le secret DISCORD_WEBHOOK (URL du webhook du canal Discord) dans
+# Settings → Secrets and variables → Actions.
+
+name: Annoncer les addons
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'addons/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: annonce-addons
+  cancel-in-progress: false
+
+jobs:
+  annoncer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Annoncer les nouvelles versions
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          AVANT: ${{ github.event.before }}
+          APRES: ${{ github.event.after }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK" ]; then
+            echo "::warning::Le secret DISCORD_WEBHOOK manque, aucune annonce envoyée."
+            exit 0
+          fi
+          node .github/scripts/annonce-addons.js
