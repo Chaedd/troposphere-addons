@@ -2,7 +2,7 @@
 
 Ce guide s'adresse aux personnes qui ajoutent ou mettent à jour des addons dans ce dépôt.
 
-> **À retenir :** tout ce qui est fusionné dans `main` est publié **immédiatement** chez tous les joueurs de Troposphère. C'est pour ça que `main` est protégée : chaque changement passe par une pull request relue avant d'être fusionnée.
+> **À retenir :** tout ce qui est poussé sur `main` est publié **immédiatement** chez tous les joueurs de Troposphère. Il n'y a pas de relecture : vérifie la [checklist](#avant-de-publier) avant chaque push.
 
 ## Avant de commencer
 
@@ -54,9 +54,9 @@ Tout le dossier est copié chez chaque joueur : n'y mets **que ce dont le jeu a 
 
 | À éviter | Pourquoi |
 | --- | --- |
-| `README.md`, `CHANGELOG.md`, documentation | Inutile en jeu. Décris l'addon dans `## Notes` et le changement dans ta pull request. |
+| `README.md`, `CHANGELOG.md`, documentation | Inutile en jeu. Décris l'addon dans `## Notes` et le changement dans le message de commit. |
 | `.gitignore`, `.gitattributes`, `.editorconfig`, `.pkgmeta`, dossiers `.git/`, `.github/`, `.vscode/`, `.idea/` | Fichiers d'outils de développement. |
-| Captures d'écran, fichiers sources de graphisme (`.psd`, `.xcf`, `.blend`…) | Gros et inutiles en jeu. Mets les captures dans la pull request. |
+| Captures d'écran, fichiers sources de graphisme (`.psd`, `.xcf`, `.blend`…) | Gros et inutiles en jeu. |
 | Tests, scripts de build, fichiers de sauvegarde (`.bak`, `~`) | Inutiles en jeu. |
 | `Thumbs.db`, `desktop.ini`, `.DS_Store` | Fichiers créés automatiquement par Windows ou macOS. |
 | `.zip`, `.exe`, `.dll`, `.bat` | Archives et programmes : jamais dans un addon. |
@@ -99,40 +99,37 @@ Si l'addon a des `.toc` différents par version du jeu (`MonAddon_Mainline.toc`,
 
 ## Publier : ajout ou mise à jour
 
-1. Pars d'une version à jour de `main` et crée une branche :
+1. Récupère la dernière version de `main` :
 
    ```bash
    git checkout main
    git pull
-   git checkout -b ajout-monaddon
    ```
 
-2. Ajoute ou modifie le dossier dans `addons/`, puis commite :
+2. Ajoute ou modifie le dossier dans `addons/`, puis commite. Dis dans le message ce que fait l'addon ou ce qui change :
 
    ```bash
    git add addons/MonAddon
    git commit -m "Ajoute MonAddon 1.0.0"
    ```
 
-3. Envoie la branche sur GitHub :
+3. Envoie sur GitHub :
 
    ```bash
-   git push -u origin ajout-monaddon
+   git push
    ```
 
-4. Sur la page du dépôt, clique sur **Compare & pull request**. Dis en une ou deux phrases ce que fait l'addon ou ce qui change, puis **Create pull request**.
-5. Une autre personne relit et clique sur **Approve**. On fusionne ensuite avec **Merge pull request**.
-6. C'est publié : les joueurs voient l'addon ou la mise à jour en cliquant sur **Rafraîchir** dans Troposphère.
+4. C'est publié : les joueurs voient l'addon ou la mise à jour en cliquant sur **Rafraîchir** dans Troposphère.
 
-Une pull request = un addon, c'est plus simple à relire.
+Un commit = un addon, c'est plus simple à retrouver dans l'historique.
 
-Pousser directement sur `main` est refusé avec le message « Changes must be made through a pull request ». C'est normal : passe par une branche.
+Si `git push` est refusé parce que quelqu'un a poussé entre-temps, lance `git pull` puis `git push` à nouveau. Le « force push » (`git push --force`) est bloqué sur `main` : il effacerait le travail des autres.
 
 ## Retirer un addon
 
-Supprime son dossier dans une pull request. Attention : l'addon disparaît de la liste de Troposphère, mais **il reste installé chez les joueurs qui l'ont déjà**. Ils doivent alors supprimer le dossier à la main dans `Interface\AddOns`. Préviens-les si c'est important.
+Supprime son dossier, commite et pousse. Attention : l'addon disparaît de la liste de Troposphère, mais **il reste installé chez les joueurs qui l'ont déjà**. Ils doivent alors supprimer le dossier à la main dans `Interface\AddOns`. Préviens-les si c'est important.
 
-## Avant d'ouvrir la pull request
+## Avant de publier
 
 - [ ] Le dossier et le `.toc` ont le même nom.
 - [ ] `## Title`, `## Notes`, `## Author` et `## Version` sont remplis.
