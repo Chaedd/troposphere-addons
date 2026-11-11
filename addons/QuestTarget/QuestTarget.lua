@@ -1,9 +1,14 @@
 -- QuestTarget : un bouton à côté de chaque quête du suivi d'objectifs.
 -- Clic gauche : cible le mob le plus proche lié à la quête (à tuer ou à looter).
 --
+-- Licence : GPLv3 (voir LICENSE). La base Data\ est tirée des données Forever de
+-- QuestieDB (https://github.com/Questie/QuestieDB), par l'équipe et les
+-- contributeurs de Questie, réutilisées selon les termes GPLv3 qu'ils proposent.
+--
 -- D'où viennent les noms des mobs :
+--   0. la base de données (Data\) : mobs à tuer et mobs qui lâchent les objets ;
 --   1. objectifs « tuer » : le nom est dans le texte de l'objectif (« Sanglier tué : 2/8 ») ;
---   2. objectifs « looter » : le jeu ne donne pas le nom du mob, donc l'addon l'apprend
+--   2. objectifs « looter » : sans la base, le jeu ne donne pas le nom du mob, donc l'addon l'apprend
 --      en lisant l'infobulle des mobs proches (barres de vie / survol / cible) : les mobs
 --      utiles à une quête y affichent le titre de la quête. Les noms appris sont gardés.
 --
@@ -11,9 +16,12 @@
 -- faire, et ses réglages ne peuvent pas changer en combat. Les boutons sont donc mis à
 -- jour hors combat ; en combat ils gardent leur dernier état.
 
-local ADDON = ...
+local ADDON, ns = ...
 local GetMeta = C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata
 local VERSION = GetMeta and GetMeta(ADDON, "Version") or "?"
+
+-- La base (Data\) décrit les quêtes de Forever (client 1.x) ; pas celles de retail.
+local USE_DB = (select(4, GetBuildInfo()) or 0) < 20000
 
 local ICON = "Interface\\Icons\\Ability_Hunter_SniperShot"
 local BUTTON_SIZE = 16
@@ -106,8 +114,31 @@ local function GetQuestMobNames(questID)
 
 	if C_QuestLog.IsComplete(questID) then return names end
 
+	-- Ce qui reste à faire : mobs à tuer et / ou objets à récupérer
 	local objectives = C_QuestLog.GetQuestObjectives(questID)
-	if objectives then
+	local killLeft, lootLeft = false, false
+	if objectives and #objectives > 0 then
+		for _, o in ipairs(objectives) do
+			if not o.finished then
+				if o.type == "monster" then killLeft = true
+				elseif o.type == "item" then lootLeft = true end
+			end
+		end
+	else
+		killLeft, lootLeft = true, true
+	end
+
+	-- 1. base de données (noms exacts, connus dès la prise de la quête)
+	local entry = USE_DB and ns.questMobs and ns.questMobs[questID]
+	local mobNames = ns.mobNames or {}
+	if entry then
+		if killLeft then for _, id in ipairs(entry[1]) do add(mobNames[id]) end end
+		if lootLeft then for _, id in ipairs(entry[2]) do add(mobNames[id]) end end
+	end
+
+	-- 2. texte de l'objectif, si la base ne connaît pas les mobs à tuer
+	-- (il peut être au pluriel ou reformulé : moins fiable que la base)
+	if objectives and not (entry and #entry[1] > 0) then
 		for _, o in ipairs(objectives) do
 			if not o.finished and o.type == "monster" then
 				add(MobNameFromObjective(o.text))
@@ -174,6 +205,9 @@ end
 -- donc être périmée après un kill. On complète alors par un ciblage par nom.
 -- Si rien n'est trouvé, on reprend l'ancienne cible, sauf si elle est morte
 -- (sinon le bouton reciblait le cadavre qu'on vient de tuer).
+-- Une macro est limitée à 255 caractères : avec plusieurs mobs, les derniers noms
+-- étaient perdus. BuildMacro rend donc une liste de morceaux, que SetMacro répartit
+-- sur le bouton et sur des boutons relais enchaînés par /click.
 local function BuildMacro(names)
 	local lines = { "/cleartarget" }
 	-- Marquer avant de reprendre l'ancienne cible : si la recherche échoue,
@@ -182,11 +216,8 @@ local function BuildMacro(names)
 	if db and db.skull then
 		tail = "/click [@target,harm,nodead] " .. MARK_BUTTON .. " LeftButton 0\n" .. tail
 	end
-	local len = #lines[1] + 1 + #tail
 	local function push(l)
-		if len + #l + 1 > MAX_MACRO then return false end
 		lines[#lines + 1] = l
-		len = len + #l + 1
 		return true
 	end
 
@@ -204,35 +235,65 @@ local function BuildMacro(names)
 			return a.index < b.index
 		end)
 		free = #cands
-		-- Réserver d'abord les meilleurs candidats ; une macro pleine ne doit
-		-- pas conserver les moins bons et écarter le premier du classement.
-		local selected, selectedLen = {}, len
-		for i = 1, math.min(#cands, MAX_PLATE_LINES) do
+		for i = math.min(#cands, MAX_PLATE_LINES), 1, -1 do
 			local u = cands[i].unit
-			local line = ("/target [@%s,exists,nodead] %s"):format(u, u)
-			if selectedLen + #line + 1 > MAX_MACRO then break end
-			selected[#selected + 1] = line
-			selectedLen = selectedLen + #line + 1
-		end
-		for i = #selected, 1, -1 do
-			push(selected[i])
+			push(("/target [@%s,exists,nodead] %s"):format(u, u))
 		end
 	end
-	do
-		local full = false
-		for pass = 1, 2 do
-			for _, n in ipairs(names) do
-				if not push("/targetexact [noexists] " .. n .. "\n/cleartarget [dead]") then
-					full = true
-					break
-				end
-			end
-			if full then break end
+	-- deux passages : si le premier mob trouvé était un cadavre, on réessaie
+	for pass = 1, 2 do
+		for _, n in ipairs(names) do
+			push("/targetexact [noexists] " .. n .. "\n/cleartarget [dead]")
 		end
 	end
+	return lines, tail, free
+end
 
-	lines[#lines + 1] = tail
-	return table.concat(lines, "\n"), free
+-- Boutons relais : chacun porte la suite de la macro (moins de 255 caractères).
+local MAX_CHUNKS = 4   -- bouton + 3 relais, de quoi couvrir une dizaine de mobs
+local chainCount = 0
+local CLICK_LEN = #"\n/click QTChain000 LeftButton 0"
+
+local function NewChainButton()
+	chainCount = chainCount + 1
+	local name = ("QTChain%03d"):format(chainCount)
+	local c = CreateFrame("Button", name, UIParent, "SecureActionButtonTemplate")
+	c:SetSize(1, 1)
+	c:SetPoint("TOPLEFT", UIParent, "TOPLEFT", -10, 10)
+	-- même réglage que le bouton de marquage : /click ... LeftButton 0 = relâchement
+	c:RegisterForClicks("LeftButtonUp")
+	c:SetAttribute("useOnKeyDown", false)
+	c:SetAttribute("type1", "macro")
+	c.clickLine = "\n/click " .. name .. " LeftButton 0"
+	return c
+end
+
+-- Découpe en morceaux de 255 caractères au plus. La fin (tail) est toujours
+-- gardée ; si tout ne tient pas, ce sont les dernières lignes (le second
+-- passage sur les noms) qui sont abandonnées.
+local function SplitMacro(units, tail)
+	local chunks, cur = {}, nil
+	local function size(u) return (cur and #cur + 1 or 0) + #u end
+	local function reserve()
+		return (#chunks + 1 == MAX_CHUNKS) and (#tail + 1) or CLICK_LEN
+	end
+	for _, u in ipairs(units) do
+		if cur and size(u) + reserve() > MAX_MACRO then
+			if #chunks + 1 == MAX_CHUNKS then break end
+			chunks[#chunks + 1] = cur
+			cur = nil
+		end
+		if size(u) + reserve() <= MAX_MACRO then
+			cur = cur and (cur .. "\n" .. u) or u
+		end
+	end
+	if cur and size(tail) > MAX_MACRO then
+		chunks[#chunks + 1] = cur
+		cur = nil
+	end
+	cur = cur and (cur .. "\n" .. tail) or tail
+	chunks[#chunks + 1] = cur
+	return chunks
 end
 
 ------------------------------------------------------------------------
@@ -307,9 +368,21 @@ local function AcquireButton()
 end
 
 local function SetMacro(b, names)
-	local macro, free = BuildMacro(names)
+	local units, tail, free = BuildMacro(names)
+	local chunks = SplitMacro(units, tail)
+	local macro = table.concat(chunks, "\n||\n")
 	if b.macro ~= macro then
-		b:SetAttribute("macrotext1", macro)
+		b.chain = b.chain or {}
+		local targets = { b }
+		for i = 2, #chunks do
+			b.chain[i - 1] = b.chain[i - 1] or NewChainButton()
+			targets[i] = b.chain[i - 1]
+		end
+		for i, chunk in ipairs(chunks) do
+			local text = chunk
+			if i < #chunks then text = text .. targets[i + 1].clickLine end
+			targets[i]:SetAttribute("macrotext1", text)
+		end
 		b.macro = macro
 	end
 	b.names = names

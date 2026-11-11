@@ -1,8 +1,23 @@
 ## Interface: 16001, 120005, 120007
 ## Title: QuestTarget
 ## Notes: Ajoute un bouton à côté des quêtes du suivi pour cibler les mobs liés à la quête (à tuer ou à looter).
-## Version: 1.3.1
+## Version: 1.4.0
 ## SavedVariablesPerCharacter: QuestTargetDB
+## X-License: GPL-3.0
+## X-Credits: Données des quêtes : QuestieDB (https://github.com/Questie/QuestieDB)
 ## IconTexture: Interface\Icons\Ability_Hunter_SniperShot
+
+# Base quête -> mobs, générée depuis QuestieDB (tools/QuestTarget/build-db.js)
+Data\Quests.lua
+Data\Names_frFR.lua
+Data\Names_deDE.lua
+Data\Names_esES.lua
+Data\Names_esMX.lua
+Data\Names_koKR.lua
+Data\Names_ptBR.lua
+Data\Names_ruRU.lua
+Data\Names_zhCN.lua
+Data\Names_zhTW.lua
+Data\Names_enUS.lua
 
 QuestTarget.lua
