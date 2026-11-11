@@ -163,6 +163,7 @@ function A:RefreshDisplays()
     for owner,b in pairs(badges) do if not visited[owner] then restoreName(b); b:Hide() end end
 end
 function A:InstallHooks()
+    if self.InstallReportMenus then self:InstallReportMenus() end
     local function hook(name,fn)
         if not hooks[name] and type(_G[name])=="function" then hooksecurefunc(name,fn); hooks[name]=true end
     end

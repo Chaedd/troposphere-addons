@@ -3,12 +3,13 @@
 ## IconTexture: Interface\AddOns\Red Flag\flag
 ## Notes: Signalements partagés entre membres de guilde.
 ## Author: STO
-## Version: 0.1.4
+## Version: 0.2.1
 ## SavedVariables: RedFlagDB
 Model.lua
 Core.lua
 Sync.lua
 UI.lua
+Menus.lua
 Display.lua
 Minimap.lua
 Debug.lua

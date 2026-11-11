@@ -1,6 +1,6 @@
 local _, A = ...
 RedFlag = A
-A.version = "0.1.4"
+A.version = "0.2.1"
 A.defaults = {group=true, target=true, lfg=true, chat=true, tooltip=true, debug=false}
 local M = A.Model
 function A:Print(s) DEFAULT_CHAT_FRAME:AddMessage("|cffff4545Red Flag|r : " .. s) end
@@ -60,6 +60,7 @@ function A:SetReport(name, reason, deleted)
         self:Broadcast(r)
         self:Changed()
         self:Print(deleted and "Ton signalement a été retiré." or "Signalement enregistré et mis en partage.")
+        return true
     else self:Print("Enregistrement refusé : capacité de stockage atteinte.") end
 end
 function A:Tip(owner, name)
