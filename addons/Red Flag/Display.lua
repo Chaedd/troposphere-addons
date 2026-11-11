@@ -1,6 +1,7 @@
 local _, A = ...
 local M=A.Model
 local badges,bindings,hooks={},{},{}
+local recentRows={}
 local texture="Interface\\AddOns\\Red Flag\\flag"
 local namePrefix="|T"..texture..":16:16|t "
 local function restoreName(b)
@@ -22,11 +23,20 @@ function A:GetDisplayDebugState()
     for _,name in ipairs({"LFGListSearchEntry_Update","LFGListApplicationViewer_UpdateApplicantMember","LFGBrowseSearchEntry_Update"}) do state[name]=hooks[name] or false end
     state.foreverBrowse=LFGBrowseFrame and LFGBrowseFrame.ScrollBox~=nil or false
     state.foreverWho=LFGWhoListFrame and LFGWhoListFrame.ScrollBox~=nil or false
+    state.recentAllies=RecentAlliesFrame and RecentAlliesFrame.List and RecentAlliesFrame.List.ScrollBox~=nil or false
+    state.recentAlliesSocial=SocialUIFrame and SocialUIFrame.RecentAlliesList and SocialUIFrame.RecentAlliesList.ScrollBox~=nil or false
     return state
 end
 local function safeName(name)
     if issecretvalue and issecretvalue(name) then return nil end
     if type(name)=="string" then return A:Name(name) end
+end
+local function portraitAnchor(owner)
+    if type(owner.GetPortrait)=="function" then
+        local ok,portrait=pcall(owner.GetPortrait,owner)
+        if ok and portrait then return portrait end
+    end
+    return (owner.TargetFrameContainer and owner.TargetFrameContainer.Portrait) or owner.Portrait or owner.portrait or owner
 end
 local function badge(owner,name,option,targets)
     local b=badges[owner]
@@ -37,7 +47,7 @@ local function badge(owner,name,option,targets)
     if InCombatLockdown() then if b then b:Hide() end; return end
     if not b then
         -- Unit frames keep an independent overlay; native LFG names reserve icon space.
-        b=CreateFrame("Button",nil,option=="lfg" and owner or UIParent)
+        b=CreateFrame("Button",nil,(option=="lfg" or option=="recent") and owner or UIParent)
         b:SetSize(16,16)
         b.icon=b:CreateTexture(nil,"ARTWORK"); b.icon:SetAllPoints(); b.icon:SetTexture(texture)
         b:SetScript("OnEnter",function(self)
@@ -63,25 +73,36 @@ local function badge(owner,name,option,targets)
     b.target,b.targets=name,targets
     b:ClearAllPoints()
     b.icon:Show()
-    if option=="lfg" and owner.Name and owner.Name.GetText then
-        local label=owner.Name
+    local label=option=="recent" and owner.CharacterData and owner.CharacterData.Name or owner.Name
+    if (option=="lfg" or option=="recent") and label and label.GetText then
         local text=label:GetText()
         if type(text)=="string" and not (issecretvalue and issecretvalue(text)) then
             b.nameLabel,b.nameWidth=label,label:GetWidth()
             -- Who-row context menus read OriginalName or the displayed text.
-            if not owner.resultID and owner.GetElementData and not owner.OriginalName then
+            if option=="lfg" and not owner.resultID and owner.GetElementData and not owner.OriginalName then
                 b.nameOwner,b.originalName=owner,text
                 owner.OriginalName=text
             end
             label:SetText(namePrefix..text)
-            local limit=owner.NameMaxWidth or b.nameWidth
+            local limit=owner.NameMaxWidth or label.maxWidth or b.nameWidth
             if owner.DiscordIcon and owner.DiscordIcon:IsShown() then limit=limit-owner.DiscordIcon:GetWidth()-4 end
             if owner.NewPlayerFriendlyIcon and owner.NewPlayerFriendlyIcon:IsShown() then limit=limit-owner.NewPlayerFriendlyIcon:GetWidth()-1 end
             label:SetWidth(math.min(b.nameWidth+20,math.max(20,limit)))
+            -- Social cards already divide a fixed text budget between name,
+            -- level, class and status icons. Keep that allocation intact.
+            if option=="recent" and not owner.CharacterData then label:SetWidth(b.nameWidth) end
             b.icon:Hide() -- The inline texture draws the icon; this button handles hover/click.
             b:SetPoint("LEFT",label,"LEFT",0,0)
         else b:SetPoint("TOPRIGHT",owner,"TOPRIGHT",-6,-2) end
-    elseif option=="lfg" then b:SetPoint("TOPRIGHT",owner,"TOPRIGHT",-6,-2)
+    elseif option=="lfg" or option=="recent" then b:SetPoint("TOPRIGHT",owner,"TOPRIGHT",-6,-2)
+    elseif option=="target" then
+        local content=owner.TargetFrameContent
+        local contextual=content and content.TargetFrameContentContextual
+        local leader=(contextual and contextual.LeaderIcon) or owner.LeaderIcon or owner.leaderIcon
+        -- Hidden textures keep their anchors. The flag stays in this slot
+        -- whether or not the selected player is currently the party leader.
+        if leader then b:SetPoint("LEFT",leader,"RIGHT",3,0)
+        else b:SetPoint("CENTER",portraitAnchor(owner),"TOPRIGHT",-2,-2) end
     else b:SetPoint("RIGHT",owner,"LEFT",-2,0) end
     b:Show()
 end
@@ -116,6 +137,22 @@ local function scanForeverRows()
             end
         end)
     end
+    local function scanRecent(list)
+        local scroll=list and list.ScrollBox
+        if not scroll or not scroll.ForEachFrame then return end
+        scroll:ForEachFrame(function(entry)
+            local data=entry.elementData
+            if data and data.characterData then
+                recentRows[entry]=true
+                bindings[entry]=function()
+                    local current=entry.elementData
+                    return current and current.characterData and current.characterData.fullName
+                end
+            end
+        end)
+    end
+    scanRecent(RecentAlliesFrame and RecentAlliesFrame.List)
+    scanRecent(SocialUIFrame and SocialUIFrame.RecentAlliesList)
 end
 function A:RefreshDisplays()
     if not self.options then return end
@@ -158,7 +195,7 @@ function A:RefreshDisplays()
                 end
             end
         end
-        badge(owner,targets[1],"lfg",targets)
+        badge(owner,targets[1],recentRows[owner] and "recent" or "lfg",targets)
     end
     for owner,b in pairs(badges) do if not visited[owner] then restoreName(b); b:Hide() end end
 end

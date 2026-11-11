@@ -51,9 +51,9 @@ function A:SetUITab(key)
     f.name:ClearFocus(); f.reason:ClearFocus(); f.search:ClearFocus()
     for name,page in pairs(f.pages) do
         page:SetShown(name==key)
-        if name==key then PanelTemplates_SelectTab(f.tabs[name])
-        else PanelTemplates_DeselectTab(f.tabs[name]) end
+        f.tabs[name]:SetChecked(name==key)
     end
+    f.TitleText:SetText("Red Flag — "..f.tabs[key].tooltipText)
     self:RefreshUI()
 end
 
@@ -96,51 +96,64 @@ function A:CreateUI()
     f.subtitle=text(f,"Les signalements de ta guilde, au même endroit.",24,-48,710,"GameFontHighlightSmall")
     tinsert(UISpecialFrames,"RedFlagWindow")
     f.pages,f.tabs={},{}
-    f.tabPadding,f.minTabWidth,f.maxTabWidth=30,150,200
-    for i,item in ipairs({{"list","Signalements",180},{"report","Ajouter / modifier",200},{"settings","Réglages",150}}) do
+    for i,item in ipairs({
+        {"list","Signalements","friends-icon-tab-recentallies"},
+        {"report","Ajouter / modifier","friends-icon-tab-friendRequest"},
+        {"settings","Réglages",nil,"Interface\\Icons\\Trade_Engineering"},
+    }) do
         local key=item[1]
-        f.pages[key]=panel(f,20,-114,780,414)
-        local tab=CreateFrame("Button",nil,f,"PanelTopTabButtonTemplate")
-        tab:SetSize(item[3],32); tab:SetPoint("TOPLEFT",20+(i-1)*220,-82)
-        tab:SetText(item[2]); tab:SetScript("OnClick",function() A:SetUITab(key) end)
+        f.pages[key]=panel(f,20,-78,780,450)
+        -- Same frame art, selected state, press animation and tooltip behavior
+        -- as Forever's social-window side tabs. OnLoad sets the native size.
+        local tab=CreateFrame("Frame",nil,f,"LargeSideTabButtonTemplate")
+        tab:EnableMouse(true)
+        tab:SetPoint("TOPLEFT",f,"TOPRIGHT",-2,-78-(i-1)*(tab:GetHeight()+4))
+        tab:SetFrameLevel(f:GetFrameLevel()+5)
+        tab.tooltipText=item[2]
+        if item[3] then
+            tab.activeAtlas=item[3]; tab.inactiveAtlas=item[3].."-inactive"
+        else tab.Icon:SetTexture(item[4]); tab.Icon:SetSize(32,32) end
+        tab:SetCustomOnMouseUpHandler(function(_,mouseButton,inside)
+            if mouseButton=="LeftButton" and inside then A:SetUITab(key) end
+        end)
         f.tabs[key]=tab
     end
     local p=f.pages.list
-    f.search=edit(p,12,-12,280,34,100); f.search:SetText("")
-    button(p,"Effacer",300,-12,72,function() f.search:SetText("") end)
-    text(p,"RECHERCHER UN JOUEUR",12,-54,350,"GameFontDisableSmall")
+    f.search=edit(p,12,-12,238,34,100); f.search:SetText("")
+    button(p,"Effacer",260,-12,72,function() f.search:SetText("") end)
+    text(p,"RECHERCHER UN JOUEUR",12,-54,320,"GameFontDisableSmall")
     f.rows,f.offset={},0
     for i=1,7 do
         local row=CreateFrame("Button",nil,p)
-        row:SetSize(360,32); row:SetPoint("TOPLEFT",12,-78-(i-1)*38)
+        row:SetSize(320,32); row:SetPoint("TOPLEFT",12,-78-(i-1)*38)
         row:SetScript("OnClick",function(self) f.selected=self.target; A:RefreshUI() end)
         row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight","ADD")
         row.bg=row:CreateTexture(nil,"BACKGROUND")
         row.bg:SetAllPoints(); row.bg:SetTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight"); row.bg:SetBlendMode("ADD")
-        row.text=text(row,"",10,-7,260)
-        row.count=text(row,"",285,-8,60,"GameFontHighlightSmall")
+        row.text=text(row,"",10,-7,235)
+        row.count=text(row,"",255,-8,55,"GameFontHighlightSmall")
         row:SetScript("OnEnter",function(self) if self.target then A:Tip(self,self.target) end end)
         row:SetScript("OnLeave",function() GameTooltip:Hide() end)
         f.rows[i]=row
     end
-    f.empty=text(p,"",24,-140,320)
-    f.previous=button(p,"Précédent",12,-358,106,function() f.offset=math.max(0,f.offset-7); A:RefreshUI() end)
-    f.next=button(p,"Suivant",266,-358,106,function() f.offset=math.min(lastPage(#f.entries),f.offset+7); A:RefreshUI() end)
-    f.pageCount=text(p,"",128,-369,130,"GameFontHighlightSmall")
+    f.empty=text(p,"",24,-140,290)
+    f.previous=button(p,"Précédent",12,-394,100,function() f.offset=math.max(0,f.offset-7); A:RefreshUI() end)
+    f.next=button(p,"Suivant",232,-394,100,function() f.offset=math.min(lastPage(#f.entries),f.offset+7); A:RefreshUI() end)
+    f.pageCount=text(p,"",120,-405,110,"GameFontHighlightSmall")
     p:EnableMouseWheel(true)
     p:SetScript("OnMouseWheel",function(_,delta)
         f.offset=math.max(0,math.min(lastPage(#f.entries),f.offset-delta*3)); A:RefreshUI()
     end)
-    f.detail=panel(p,388,-12,380,390)
-    f.detailName=text(f.detail,"Sélectionne un joueur",16,-16,348,"GameFontNormalLarge")
-    f.detailCount=text(f.detail,"",16,-43,348,"GameFontHighlightSmall")
+    f.detail=panel(p,348,-12,420,426)
+    f.detailName=text(f.detail,"Sélectionne un joueur",22,-20,376,"GameFontNormalLarge")
+    f.detailCount=text(f.detail,"",22,-51,376,"GameFontHighlight")
     f.detailScroll=CreateFrame("ScrollFrame",nil,f.detail,"UIPanelScrollFrameTemplate")
-    f.detailScroll:SetPoint("TOPLEFT",16,-70); f.detailScroll:SetPoint("BOTTOMRIGHT",-34,94)
-    local content=CreateFrame("Frame",nil,f.detailScroll); content:SetSize(320,1)
+    f.detailScroll:SetPoint("TOPLEFT",20,-86); f.detailScroll:SetPoint("BOTTOMRIGHT",-40,102)
+    local content=CreateFrame("Frame",nil,f.detailScroll); content:SetSize(356,1)
     f.detailScroll:SetScrollChild(content); f.detailContent=content
-    f.detailText=text(content,"",0,0,320)
-    f.modify=button(f.detail,"Ajouter mon avis",16,-300,348,function() if f.selected then A:Open(f.selected) end end,true)
-    f.remove=button(f.detail,"Retirer mon signalement",16,-342,348,function()
+    f.reportCards={}
+    f.modify=button(f.detail,"Ajouter mon avis",20,-336,380,function() if f.selected then A:Open(f.selected) end end,true)
+    f.remove=button(f.detail,"Retirer mon signalement",20,-378,380,function()
         if f.selected and ownReport(f.selected) then A:SetReport(f.selected,"",true) end
     end)
     f.search:SetScript("OnTextChanged",function() f.offset=0; A:RefreshUI() end)
@@ -180,6 +193,7 @@ function A:CreateUI()
     f.checks={}
     local options={
         {"lfg","Recherche de groupe","Joueurs et groupes dans la fenêtre de recherche."},
+        {"recent","Alliances récentes","Un drapeau avant le nom des joueurs signalés."},
         {"group","Groupe et raid","Drapeaux sur les cadres de tes coéquipiers."},
         {"target","Cible et focus","Repère un joueur signalé en le ciblant."},
         {"chat","Messages du chat","Un drapeau à côté du nom dans les nouveaux messages."},
@@ -188,9 +202,9 @@ function A:CreateUI()
     for i,item in ipairs(options) do
         local key=item[1]
         local check=CreateFrame("CheckButton",nil,p,"UICheckButtonTemplate")
-        check:SetPoint("TOPLEFT",20,-76-(i-1)*49)
-        text(p,item[2],60,-80-(i-1)*49,650)
-        text(p,item[3],60,-100-(i-1)*49,650,"GameFontDisableSmall")
+        check:SetPoint("TOPLEFT",20,-76-(i-1)*42)
+        text(p,item[2],60,-80-(i-1)*42,650)
+        text(p,item[3],60,-100-(i-1)*42,650,"GameFontDisableSmall")
         check:SetScript("OnClick",function(self) A.options[key]=not not self:GetChecked(); A:Changed() end)
         f.checks[key]=check
     end
@@ -241,15 +255,41 @@ function A:RefreshUI()
     f.pageCount:SetText(#entries==0 and "0 résultat" or ((f.offset+1).."–"..math.min(f.offset+7,#entries).." / "..#entries))
     local reports=f.selected and self:Reports(f.selected) or {}
     f.detailName:SetText(f.selected and pretty(f.selected) or "Sélectionne un joueur")
-    f.detailCount:SetText(f.selected and (#reports.." signalement(s) de la guilde") or "Les motifs et leurs auteurs apparaîtront ici.")
-    local lines={}
-    for _,r in ipairs(reports) do
-        lines[#lines+1]="|cffffd100"..pretty(r.author)..(self.player and M.Key(r.author)==M.Key(self.player) and " (toi)" or "").."|r"
-        lines[#lines+1]="|cff9ca6b8"..date("%d/%m/%Y",r.rev).."|r"
-        lines[#lines+1]=r.reason.."\n"
+    f.detailCount:SetText(f.selected and (#reports.." signalement"..(#reports>1 and "s" or "").." de la guilde") or "Les motifs et leurs auteurs apparaîtront ici.")
+    local countY=20+f.detailName:GetStringHeight()+10
+    f.detailCount:ClearAllPoints(); f.detailCount:SetPoint("TOPLEFT",22,-countY)
+    f.detailScroll:ClearAllPoints()
+    f.detailScroll:SetPoint("TOPLEFT",20,-(countY+f.detailCount:GetStringHeight()+20))
+    f.detailScroll:SetPoint("BOTTOMRIGHT",-40,102)
+    local y=4
+    for i,r in ipairs(reports) do
+        local card=f.reportCards[i]
+        if not card then
+            card=CreateFrame("Frame",nil,f.detailContent,"BackdropTemplate")
+            card:SetWidth(356)
+            card:SetBackdrop({bgFile="Interface\\ChatFrame\\ChatFrameBackground",edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",
+                tile=true,tileSize=16,edgeSize=16,insets={left=4,right=4,top=4,bottom=4}})
+            card:SetBackdropColor(0,0,0,.35); card:SetBackdropBorderColor(.4,.34,.23,.8)
+            card.author=text(card,"",18,-16,320,"GameFontNormalLarge")
+            card.date=text(card,"",18,-44,320,"GameFontHighlightSmall")
+            card.date:SetTextColor(.65,.65,.65)
+            card.reason=text(card,"",18,-72,320,"GameFontHighlightLarge")
+            card.reason:SetSpacing(4)
+            f.reportCards[i]=card
+        end
+        card:ClearAllPoints(); card:SetPoint("TOPLEFT",0,-y)
+        card.author:SetText(pretty(r.author)..(self.player and M.Key(r.author)==M.Key(self.player) and " (toi)" or ""))
+        local dateY=16+card.author:GetStringHeight()+10
+        card.date:ClearAllPoints(); card.date:SetPoint("TOPLEFT",18,-dateY)
+        card.date:SetText("Mis à jour le "..date("%d/%m/%Y",r.rev))
+        local reasonY=dateY+card.date:GetStringHeight()+18
+        card.reason:ClearAllPoints(); card.reason:SetPoint("TOPLEFT",18,-reasonY)
+        card.reason:SetText(r.reason)
+        card:SetHeight(reasonY+card.reason:GetStringHeight()+20)
+        card:Show(); y=y+card:GetHeight()+16
     end
-    f.detailText:SetText(table.concat(lines,"\n"))
-    f.detailContent:SetHeight(math.max(1,f.detailText:GetStringHeight()+8))
+    for i=#reports+1,#f.reportCards do f.reportCards[i]:Hide() end
+    f.detailContent:SetHeight(math.max(1,y))
     if f.detailKey~=f.selected then f.detailScroll:SetVerticalScroll(0); f.detailKey=f.selected end
     local own=ownReport(f.selected)
     f.modify:SetEnabled(f.selected~=nil and self.records~=nil)

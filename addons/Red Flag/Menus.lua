@@ -58,7 +58,7 @@ function A:InstallReportMenus()
     end
     for _,kind in ipairs({"TARGET","FOCUS","PLAYER","ENEMY_PLAYER","PARTY","RAID","RAID_PLAYER",
         "FRIEND","FRIEND_OFFLINE","CHAT_ROSTER","GUILD","GUILD_OFFLINE","COMMUNITIES_WOW_MEMBER",
-        "COMMUNITIES_GUILD_MEMBER"}) do
+        "COMMUNITIES_GUILD_MEMBER","RECENT_ALLY","RECENT_ALLY_OFFLINE"}) do
         Menu.ModifyMenu("MENU_UNIT_"..kind,extend)
     end
     installed=true

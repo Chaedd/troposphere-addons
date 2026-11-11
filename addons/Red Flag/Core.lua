@@ -1,7 +1,7 @@
 local _, A = ...
 RedFlag = A
-A.version = "0.2.1"
-A.defaults = {group=true, target=true, lfg=true, chat=true, tooltip=true, debug=false}
+A.version = "0.3.2"
+A.defaults = {group=true, target=true, lfg=true, recent=true, chat=true, tooltip=true, debug=false}
 local M = A.Model
 function A:Print(s) DEFAULT_CHAT_FRAME:AddMessage("|cffff4545Red Flag|r : " .. s) end
 function A:Realm() return GetNormalizedRealmName() or GetRealmName():gsub("%s", "") end
