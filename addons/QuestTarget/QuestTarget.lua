@@ -573,30 +573,46 @@ end
 ------------------------------------------------------------------------
 -- Apprentissage des mobs par leur infobulle
 
-local function LearnFromUnit(unit)
-	if not db or InCombatLockdown() then return end
+-- Les lignes « titre de quête » de l'infobulle portent directement l'ID de la
+-- quête (line.id) : plus fiable que comparer le texte au titre du journal.
+local QUEST_TITLE_LINE = Enum and Enum.TooltipDataLineType and Enum.TooltipDataLineType.QuestTitle
+
+local function LearnFromUnitUnsafe(unit)
 	if not UnitExists(unit) or UnitIsPlayer(unit) or UnitIsDead(unit) then return end
 	local name = UnitName(unit)
 	if not name or IsSecret(name) then return end
 	local data = C_TooltipInfo and C_TooltipInfo.GetUnit and C_TooltipInfo.GetUnit(unit)
 	if not data or not data.lines then return end
 
-	local titles = GetTitles()
+	local titles
 	local changed = false
 	for _, line in ipairs(data.lines) do
-		local text = line.leftText
-		if type(text) == "string" and not IsSecret(text) then
-			local questID = titles[text]
-			if questID then
-				db.learned[questID] = db.learned[questID] or {}
-				if not db.learned[questID][name] then
-					db.learned[questID][name] = true
-					changed = true
-				end
+		local questID
+		if QUEST_TITLE_LINE and line.type == QUEST_TITLE_LINE and type(line.id) == "number" then
+			questID = line.id
+		else
+			local text = line.leftText
+			if type(text) == "string" and not IsSecret(text) then
+				titles = titles or GetTitles()
+				questID = titles[text]
+			end
+		end
+		if questID and C_QuestLog.GetLogIndexForQuestID(questID) then
+			db.learned[questID] = db.learned[questID] or {}
+			if not db.learned[questID][name] then
+				db.learned[questID][name] = true
+				changed = true
 			end
 		end
 	end
 	if changed then QueueUpdate() end
+end
+
+-- Apprendre aussi en combat : c'est souvent là qu'on croise les mobs. En combat,
+-- certaines valeurs peuvent être secrètes ; pcall évite qu'une erreur remonte.
+local function LearnFromUnit(unit)
+	if not db or not unit then return end
+	pcall(LearnFromUnitUnsafe, unit)
 end
 
 local function ScanNamePlates()
@@ -611,8 +627,11 @@ end
 -- Démarrage
 
 local function HookTracker()
+	-- quêtes normales, de campagne, d'expédition et objectifs bonus de zone
 	for _, name in ipairs({ "QuestObjectiveTracker", "CampaignQuestObjectiveTracker",
-		"QUEST_TRACKER_MODULE", "CAMPAIGN_QUEST_TRACKER_MODULE" }) do
+		"WorldQuestObjectiveTracker", "BonusObjectiveTracker",
+		"QUEST_TRACKER_MODULE", "CAMPAIGN_QUEST_TRACKER_MODULE",
+		"WORLD_QUEST_TRACKER_MODULE", "BONUS_OBJECTIVE_TRACKER_MODULE" }) do
 		local m = _G[name]
 		if type(m) == "table" then
 			modules[#modules + 1] = m
@@ -677,6 +696,10 @@ events:SetScript("OnEvent", function(self, event, arg1)
 		C_Timer.NewTicker(0.25, function()
 			if not InCombatLockdown() then QueueUpdate() end
 		end)
+		-- relit l'infobulle des mobs déjà visibles : NAME_PLATE_UNIT_ADDED ne se
+		-- redéclenche pas quand on prend une quête à côté de mobs déjà affichés,
+		-- et l'infobulle n'a pas toujours ses lignes de quête à l'apparition.
+		C_Timer.NewTicker(1, ScanNamePlates)
 		QueueUpdate()
 	elseif event == "QUEST_LOG_UPDATE" or event == "QUEST_WATCH_LIST_CHANGED" then
 		titlesDirty = true
@@ -732,6 +755,20 @@ SlashCmdList["QUESTTARGET"] = function(msg)
 			Print("  noms : " .. table.concat(b.names or {}, ", "))
 			Print("  macro : " .. (b.macro or "?"):gsub("\n", " | "))
 		end
+		-- quêtes du suivi sans bouton, et pourquoi
+		local seen = {}
+		ForEachQuestBlock(function(questID, block)
+			if type(questID) ~= "number" or buttons[questID] or seen[questID] then return end
+			seen[questID] = true
+			local types = {}
+			for _, o in ipairs(C_QuestLog.GetQuestObjectives(questID) or {}) do
+				types[#types + 1] = (o.type or "?") .. (o.finished and "(fini)" or "")
+			end
+			local why = C_QuestLog.IsComplete(questID) and "quête terminée"
+				or not block:IsVisible() and "bloc masqué"
+				or "aucun mob connu (objectifs : " .. (#types > 0 and table.concat(types, ", ") or "aucun") .. ")"
+			Print(("sans bouton : %s (%d) : %s"):format(C_QuestLog.GetTitleForQuestID(questID) or "?", questID, why))
+		end)
 	elseif msg == "list" then
 		local any = false
 		for questID, names in pairs(db.learned) do
