@@ -1,15 +1,17 @@
 local _, A = ...
 RedFlag = A
-A.version = "0.1.0"
-A.defaults = {group=true, target=true, lfg=true, chat=true, tooltip=true}
+A.version = "0.1.1"
+A.defaults = {group=true, target=true, lfg=true, chat=true, tooltip=true, debug=false}
 local M = A.Model
 function A:Print(s) DEFAULT_CHAT_FRAME:AddMessage("|cffff4545Red Flag|r : " .. s) end
 function A:Realm() return GetNormalizedRealmName() or GetRealmName():gsub("%s", "") end
-function A:Name(s) return M.Name(s, self:Realm()) end
+function A:Name(s) return M.CharacterName(s) end
 function A:UnitName(unit)
-    local ok, name, realm = pcall(UnitFullName, unit)
-    if not ok or (issecretvalue and (issecretvalue(name) or issecretvalue(realm))) or not name then return nil end
-    return self:Name(name .. "-" .. ((realm and realm ~= "") and realm or self:Realm()))
+    local ok, name, surname = pcall(UnitFullName, unit)
+    if not ok or (issecretvalue and (issecretvalue(name) or issecretvalue(surname))) or not name then return nil end
+    if name:find("[ %-]") then return self:Name(name) end
+    if not surname or surname == "" then return nil end
+    return self:Name(name .. "-" .. surname)
 end
 function A:RefreshGuild()
     local guild = GetGuildInfo("player")
@@ -24,15 +26,19 @@ function A:RefreshGuild()
         self:Changed()
     end
     local members = {}
+    local total, accepted = 0, 0
     if scope then
-        for i=1,GetNumGuildMembers() do
+        total = GetNumGuildMembers()
+        for i=1,total do
             local name = GetGuildRosterInfo(i)
             name = self:Name(name)
-            if name then members[M.Key(name)] = true end
+            if name then members[M.Key(name)] = true; accepted=accepted+1 end
         end
         if self.player then members[M.Key(self.player)] = true end
     end
     self.members = members
+    self.rosterTotal, self.rosterAccepted = total, accepted
+    if self.DebugLog then self:DebugLog("ROSTER", "lignes="..total.." noms acceptés="..accepted) end
 end
 function A:Changed()
     if self.RefreshUI then self:RefreshUI() end
@@ -44,7 +50,7 @@ end
 function A:SetReport(name, reason, deleted)
     if not self.records then self:Print("Tu dois être dans une guilde."); return end
     name, reason = self:Name(name), M.Plain(reason)
-    if not name then self:Print("Pseudo invalide. Utilise Nom-Royaume pour un autre royaume."); return end
+    if not name then self:Print("Nom invalide. Utilise Prénom-Nomdefamille ou cible le joueur."); return end
     if not deleted and (#reason == 0 or #reason > 200) then self:Print("Le motif est obligatoire (200 octets maximum)."); return end
     local r = {target=name,author=self.player,reason=deleted and "" or reason,deleted=not not deleted,rev=1}
     local old = self.records[M.ID(r)]
@@ -71,6 +77,7 @@ local frame = CreateFrame("Frame")
 A.events = frame
 frame:RegisterEvent("ADDON_LOADED")
 frame:SetScript("OnEvent", function(_, event, ...)
+    if A.DebugLog then A:DebugLog("EVENT", event) end
     if event == "ADDON_LOADED" then
         local name = ...
         if name == "Red Flag" then
