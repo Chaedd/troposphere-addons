@@ -1,6 +1,6 @@
 local _, A = ...
 RedFlag = A
-A.version = "0.3.2"
+A.version = "1.0.0"
 A.defaults = {group=true, target=true, lfg=true, recent=true, chat=true, tooltip=true, debug=false}
 local M = A.Model
 function A:Print(s) DEFAULT_CHAT_FRAME:AddMessage("|cffff4545Red Flag|r : " .. s) end
