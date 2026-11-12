@@ -2,7 +2,7 @@
 ## Title: QuestTarget
 ## Notes: Ajoute un bouton à côté des quêtes du suivi pour cibler les mobs liés à la quête (à tuer ou à looter).
 ## Author: STO
-## Version: 1.4.2
+## Version: 1.4.4
 ## SavedVariablesPerCharacter: QuestTargetDB
 ## X-License: GPL-3.0
 ## X-Credits: Données des quêtes : QuestieDB (https://github.com/Questie/QuestieDB)

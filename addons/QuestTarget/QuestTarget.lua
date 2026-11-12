@@ -41,11 +41,13 @@ local updateQueued = false
 local superButton
 local markButton
 local optionsFrame
+local debugFrame, debugLines
 local RefreshOptions
 local MARKER_NAMES = { "Étoile", "Cercle", "Losange", "Triangle", "Lune", "Carré", "Croix", "Tête de mort" }
 
 local function Print(msg)
 	DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99QuestTarget|r : " .. msg)
+	if debugLines then debugLines[#debugLines + 1] = msg end
 end
 
 local function IsSecret(v)
@@ -117,12 +119,28 @@ local function GetQuestMobNames(questID)
 
 	-- Ce qui reste à faire : mobs à tuer et / ou objets à récupérer
 	local objectives = C_QuestLog.GetQuestObjectives(questID)
-	local killLeft, lootLeft = false, false
+	local killLeft, lootLeft, otherLeft = false, false, false
+	local killObjectives = {}
+	-- Les objectifs peuvent employer le pluriel, contrairement aux noms exacts
+	-- de la base. Comparer mot par mot permet aussi de garder les noms composés.
+	local function nameKey(name)
+		if not name then return end
+		return (name:lower():gsub("(%S+)s%f[%s%z]", "%1"))
+	end
 	if objectives and #objectives > 0 then
 		for _, o in ipairs(objectives) do
+			if o.type == "monster" then
+				local key = nameKey(MobNameFromObjective(o.text))
+				if key then
+					-- Plusieurs lignes peuvent concerner le même mob : il reste
+					-- utile tant qu'au moins une de ces lignes n'est pas finie.
+					killObjectives[key] = killObjectives[key] or not o.finished
+				end
+			end
 			if not o.finished then
 				if o.type == "monster" then killLeft = true
-				elseif o.type == "item" then lootLeft = true end
+				elseif o.type == "item" then lootLeft = true
+				else otherLeft = true end
 			end
 		end
 	else
@@ -132,8 +150,21 @@ local function GetQuestMobNames(questID)
 	-- 1. base de données (noms exacts, connus dès la prise de la quête)
 	local entry = USE_DB and ns.questMobs and ns.questMobs[questID]
 	local mobNames = ns.mobNames or {}
+	local lootNames = {}
+	if entry and lootLeft then
+		for _, id in ipairs(entry[2]) do
+			local name = mobNames[id]
+			if name then lootNames[name] = true end
+		end
+	end
+	local function killNeeded(name)
+		return killLeft and killObjectives[nameKey(name)] ~= false
+	end
 	if entry then
-		if killLeft then for _, id in ipairs(entry[1]) do add(mobNames[id]) end end
+		for _, id in ipairs(entry[1]) do
+			local name = mobNames[id]
+			if name and killNeeded(name) then add(name) end
+		end
 		if lootLeft then for _, id in ipairs(entry[2]) do add(mobNames[id]) end end
 	end
 
@@ -152,7 +183,15 @@ local function GetQuestMobNames(questID)
 		local list = {}
 		for n in pairs(learned) do list[#list + 1] = n end
 		table.sort(list)
-		for _, n in ipairs(list) do add(n) end
+		for _, n in ipairs(list) do
+			local state = killObjectives[nameKey(n)]
+			-- Le cache d'apprentissage ne doit pas réintroduire un objectif fini.
+			-- Un même mob peut toutefois rester nécessaire pour un objet à looter.
+			if lootNames[n] or (state ~= nil and killNeeded(n))
+				or (state == nil and (killLeft or lootLeft or otherLeft or not objectives or #objectives == 0)) then
+				add(n)
+			end
+		end
 	end
 	return names
 end
@@ -160,9 +199,15 @@ end
 ------------------------------------------------------------------------
 -- Mobs visibles (barres de vie) : vivants et pas engagés par un autre joueur
 
-local MAX_PLATE_LINES = 3
 local plates = {}
 local platesOn = false
+
+local function IsQuestEnemy(unit)
+	if not UnitExists(unit) or UnitIsPlayer(unit) or UnitIsDead(unit) then return false end
+	local attackable = UnitCanAttack("player", unit)
+	local controlled = UnitPlayerControlled(unit)
+	return not IsSecret(attackable) and attackable and not IsSecret(controlled) and not controlled
+end
 
 local function CollectPlates()
 	wipe(plates)
@@ -175,7 +220,7 @@ local function CollectPlates()
 		-- Attention : les barres de vie sont des zones protégées, on ne peut pas
 		-- lire leur position (GetBottom, GetTop...) sans provoquer une erreur.
 		local unit = plate.unitToken or plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
-		if unit and UnitExists(unit) and not UnitIsPlayer(unit) and not UnitIsDead(unit) then
+		if unit and IsQuestEnemy(unit) then
 			local name = UnitName(unit)
 			local denied = UnitIsTapDenied and UnitIsTapDenied(unit)
 			local combat = UnitAffectingCombat(unit)
@@ -196,33 +241,29 @@ local function CollectPlates()
 end
 
 -- Macro du bouton.
--- Barres de vie ennemies affichées : on cible directement les mobs de la quête
--- vivants et non engagés par d'autres joueurs (/target nameplateN). Le meilleur
--- est mis en dernier, car chaque ligne remplace la précédente : libre avant
--- « en combat », puis proche (moins de ~28 m) avant lointain.
--- Sinon (barres masquées) : ciblage par nom, sans pouvoir filtrer les mobs déjà
--- engagés ; un cadavre ciblé est relâché et on essaie le nom suivant.
--- La liste des barres de vie est figée en combat (le jeu l'impose) : elle peut
--- donc être périmée après un kill. On complète alors par un ciblage par nom.
--- Si rien n'est trouvé, on reprend l'ancienne cible, sauf si elle est morte
--- (sinon le bouton reciblait le cadavre qu'on vient de tuer).
+-- Les barres de vie servent à prioriser les noms : libres, puis proches.
+-- Ne jamais enregistrer /target nameplateN : ce jeton peut être réattribué à
+-- un autre mob ou à un familier pendant que la macro est figée en combat.
+-- On cherche uniquement les noms exacts des mobs utiles. Sans résultat,
+-- on reste sans cible : l'ancienne cible peut n'avoir aucun rapport avec la quête.
 -- Une macro est limitée à 255 caractères : avec plusieurs mobs, les derniers noms
 -- étaient perdus. BuildMacro rend donc une liste de morceaux, que SetMacro répartit
 -- sur le bouton et sur des boutons relais enchaînés par /click.
 local function BuildMacro(names)
 	local lines = { "/cleartarget" }
-	-- Marquer avant de reprendre l'ancienne cible : si la recherche échoue,
-	-- celle-ci ne doit pas recevoir la tête de mort par erreur.
-	local tail = "/targetlasttarget [noexists]\n/cleartarget [dead]"
+	local tail = "/cleartarget [dead][noharm]"
 	if db and db.skull then
-		tail = "/click [@target,harm,nodead] " .. MARK_BUTTON .. " LeftButton 0\n" .. tail
-	end
-	local function push(l)
-		lines[#lines + 1] = l
-		return true
+		tail = tail .. "\n/click [harm,nodead] " .. MARK_BUTTON .. " LeftButton 0"
 	end
 
 	local free = 0
+	local ordered, seen = {}, {}
+	local function addName(name)
+		if not seen[name] then
+			seen[name] = true
+			ordered[#ordered + 1] = name
+		end
+	end
 	if platesOn then
 		local wanted = {}
 		for _, n in ipairs(names) do wanted[n] = true end
@@ -235,17 +276,16 @@ local function BuildMacro(names)
 			if a.near ~= b.near then return a.near end
 			return a.index < b.index
 		end)
-		free = #cands
-		for i = math.min(#cands, MAX_PLATE_LINES), 1, -1 do
-			local u = cands[i].unit
-			push(("/target [@%s,exists,nodead] %s"):format(u, u))
+		for _, p in ipairs(cands) do
+			if not p.busy then free = free + 1 end
+			addName(p.name)
 		end
 	end
-	-- deux passages : si le premier mob trouvé était un cadavre, on réessaie
-	for pass = 1, 2 do
-		for _, n in ipairs(names) do
-			push("/targetexact [noexists] " .. n .. "\n/cleartarget [dead]")
-		end
+	for _, name in ipairs(names) do addName(name) end
+	for _, name in ipairs(ordered) do
+		-- noharm couvre aussi l'absence de cible. Une cible morte ou amicale
+		-- ne doit pas empêcher d'essayer les noms suivants.
+		lines[#lines + 1] = "/targetexact [noharm][dead] " .. name
 	end
 	return lines, tail, free
 end
@@ -272,13 +312,17 @@ local function NewChainButton()
 	return c
 end
 
--- Découpe en morceaux de 255 caractères au plus. La fin (tail : marquage et
--- reprise de l'ancienne cible) reste dans le bouton principal, APRÈS l'appel
+-- Découpe en morceaux de 255 caractères au plus. La fin (nettoyage et
+-- marquage) reste dans le bouton principal, APRÈS l'appel
 -- aux relais : elle s'exécute même si le jeu ne lance pas les macros des relais
 -- (en 1.4.0 elle était dans le dernier relais et le signe n'était plus posé).
 -- Le meilleur (barres de vie, premier passage sur les noms) va donc dans le
 -- bouton principal ; si tout ne tient pas, les dernières lignes sont abandonnées.
 local function SplitMacro(units, tail)
+	-- Ne pas réserver un /click si tout tient déjà : cette réserve inutile
+	-- envoyait le dernier type de mob dans un relais même pour trois noms.
+	local single = table.concat(units, "\n")
+	if #single + 1 + #tail <= MAX_MACRO then return { single } end
 	local chunks, cur = {}, nil
 	local function size(u) return (cur and #cur + 1 or 0) + #u end
 	local function budget()
@@ -334,7 +378,7 @@ local function ShowTooltip(self)
 	if platesOn then
 		GameTooltip:AddLine(("%d mob(s) libre(s) visible(s)"):format(self.free or 0), 0.4, 1, 0.4)
 	else
-		GameTooltip:AddLine("Affiche les barres de vie ennemies (V) pour ignorer les mobs déjà pris par d'autres joueurs.", 1, 0.6, 0.2, true)
+		GameTooltip:AddLine("Affiche les barres de vie ennemies (V) pour prioriser les types de mobs libres et proches.", 1, 0.6, 0.2, true)
 	end
 	GameTooltip:AddLine("Clic gauche : cibler le plus proche", 0.8, 0.8, 0.8)
 	GameTooltip:AddLine("Clic droit : liste dans le chat", 0.8, 0.8, 0.8)
@@ -660,7 +704,7 @@ end
 local QUEST_TITLE_LINE = Enum and Enum.TooltipDataLineType and Enum.TooltipDataLineType.QuestTitle
 
 local function LearnFromUnitUnsafe(unit)
-	if not UnitExists(unit) or UnitIsPlayer(unit) or UnitIsDead(unit) then return end
+	if not IsQuestEnemy(unit) then return end
 	local name = UnitName(unit)
 	if not name or IsSecret(name) then return end
 	local data = C_TooltipInfo and C_TooltipInfo.GetUnit and C_TooltipInfo.GetUnit(unit)
@@ -810,6 +854,54 @@ end)
 ------------------------------------------------------------------------
 -- /questtarget (ou /qtg)
 
+local function ShowDebugReport()
+	if not debugFrame then
+		local f = CreateFrame("Frame", "QuestTargetDebugFrame", UIParent, "BackdropTemplate")
+		debugFrame = f
+		f:SetSize(660, 440)
+		f:SetPoint("CENTER")
+		f:SetFrameStrata("DIALOG")
+		f:SetClampedToScreen(true)
+		f:EnableMouse(true)
+		f:SetMovable(true)
+		f:RegisterForDrag("LeftButton")
+		f:SetScript("OnDragStart", f.StartMoving)
+		f:SetScript("OnDragStop", f.StopMovingOrSizing)
+		f:SetBackdrop({ bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background" })
+		local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+		title:SetPoint("TOPLEFT", 20, -16)
+		title:SetText("QuestTarget — diagnostic (Ctrl+C pour copier)")
+		local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+		close:SetPoint("TOPRIGHT", -4, -4)
+		local scroll = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
+		scroll:SetPoint("TOPLEFT", 20, -44)
+		scroll:SetPoint("BOTTOMRIGHT", -40, 20)
+		local edit = CreateFrame("EditBox", nil, scroll)
+		edit:SetMultiLine(true)
+		edit:SetAutoFocus(false)
+		edit:SetFontObject(ChatFontNormal)
+		edit:SetWidth(600)
+		edit:SetScript("OnEscapePressed", function() f:Hide() end)
+		scroll:SetScrollChild(edit)
+		f.edit = edit
+		tinsert(UISpecialFrames, "QuestTargetDebugFrame")
+	end
+	debugFrame:Show()
+	debugFrame.edit:SetText(table.concat(debugLines, "\n"))
+	debugFrame.edit:SetFocus()
+	debugFrame.edit:HighlightText()
+	debugLines = nil
+end
+
+local function PrintDebugQuest(questID, b)
+	Print(("%s (%d) :"):format(C_QuestLog.GetTitleForQuestID(questID) or "?", questID))
+	for i, o in ipairs(C_QuestLog.GetQuestObjectives(questID) or {}) do
+		Print(("  objectif %d : %s [%s, %s]"):format(i, o.text or "?", o.type or "?", o.finished and "fini" or "à faire"))
+	end
+	Print("  noms : " .. table.concat(b.names or {}, ", "))
+	Print("  macro : " .. (b.macro or "?"):gsub("\n", " | "))
+end
+
 SLASH_QUESTTARGET1 = "/questtarget"
 SLASH_QUESTTARGET2 = "/qtg"
 SlashCmdList["QUESTTARGET"] = function(msg)
@@ -828,6 +920,8 @@ SlashCmdList["QUESTTARGET"] = function(msg)
 	elseif msg == "options" or msg == "" then
 		ToggleOptions()
 	elseif msg == "debug" then
+		debugLines = {}
+		Print("version " .. VERSION .. " ; combat : " .. (InCombatLockdown() and "oui (macro figée)" or "non"))
 		if mainClickChained then
 			Print("relais au dernier clic : " .. (chainRunAt == mainClickAt and "exécutés" or "|cffff4040NON exécutés|r"))
 		else
@@ -838,9 +932,11 @@ SlashCmdList["QUESTTARGET"] = function(msg)
 			Print(("  %s = %s%s%s"):format(p.unit, p.name, p.busy and " (en combat)" or "", p.near and " (proche)" or ""))
 		end
 		for questID, b in pairs(buttons) do
-			Print(("%s :"):format(C_QuestLog.GetTitleForQuestID(questID) or questID))
-			Print("  noms : " .. table.concat(b.names or {}, ", "))
-			Print("  macro : " .. (b.macro or "?"):gsub("\n", " | "))
+			PrintDebugQuest(questID, b)
+		end
+		if superButton and superButton.questID and superButton.questID > 0 then
+			Print("bouton du raccourci :")
+			PrintDebugQuest(superButton.questID, superButton)
 		end
 		-- quêtes du suivi sans bouton, et pourquoi
 		local seen = {}
@@ -856,6 +952,7 @@ SlashCmdList["QUESTTARGET"] = function(msg)
 				or "aucun mob connu (objectifs : " .. (#types > 0 and table.concat(types, ", ") or "aucun") .. ")"
 			Print(("sans bouton : %s (%d) : %s"):format(C_QuestLog.GetTitleForQuestID(questID) or "?", questID, why))
 		end)
+		ShowDebugReport()
 	elseif msg == "list" then
 		local any = false
 		for questID, names in pairs(db.learned) do
