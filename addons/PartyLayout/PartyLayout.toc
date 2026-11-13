@@ -1,0 +1,9 @@
+## Interface: 16001, 120005, 120007
+## Title: PartyLayout
+## Notes: Déplace et redimensionne chaque cadre du groupe indépendamment, et les espace entre eux. /plo pour les réglages.
+## Author: Chaedd
+## IconTexture: Interface\Icons\Spell_Holy_PrayerOfHealing
+## Version: 1.0.0
+## SavedVariables: PartyLayoutDB
+
+Core.lua
