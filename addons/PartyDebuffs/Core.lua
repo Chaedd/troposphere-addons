@@ -91,6 +91,29 @@ local function IsAlways(a)
   return false
 end
 
+-- Cherche directement les debuffs de la liste ALWAYS par leur identifiant de sort.
+-- En combat, sur les clients récents, le nom et l'identifiant des auras lues une par une
+-- sont protégés : on ne peut plus reconnaître Âme affaiblie en parcourant la liste.
+-- Demander au jeu « cette unité a-t-elle le sort 6788 ? » marche encore, car c'est nous qui donnons l'identifiant.
+local function FindAlways(unit)
+  local found = {}
+  local api = C_UnitAuras
+  if not api then return found end
+  for id in pairs(ALWAYS) do
+    local a
+    if unit == "player" and api.GetPlayerAuraBySpellID then
+      local ok, r = pcall(api.GetPlayerAuraBySpellID, id)
+      if ok then a = r end
+    end
+    if not a and api.GetUnitAuraBySpellID then
+      local ok, r = pcall(api.GetUnitAuraBySpellID, unit, id)
+      if ok then a = r end
+    end
+    if a then found[#found + 1] = a end
+  end
+  return found
+end
+
 -- Identifie un debuff pour ne pas l'afficher deux fois (il ressort dans les deux listes : dissipables et tous).
 local function AuraKey(a)
   local id = a.auraInstanceID
@@ -126,8 +149,10 @@ local function IconOnEnter(self)
     end
   elseif self.auraInstanceID and GameTooltip.SetUnitDebuffByAuraInstanceID then
     GameTooltip:SetUnitDebuffByAuraInstanceID(self.unit, self.auraInstanceID, self.filter)
-  else
+  elseif self.index then
     GameTooltip:SetUnitDebuff(self.unit, self.index, self.filter)
+  else
+    return
   end
   GameTooltip:Show()
 end
@@ -281,7 +306,7 @@ local function UpdateRow(row)
 
   -- En mode /pdb set, la souris sert à déplacer ton cadre : pas d'infobulle sur ses icônes.
   local mouse = not (setMode and row.isBox)
-  local fake = row.fakeAuras or ((testMode or (setMode and row.isBox)) and TEST_AURAS) or nil
+  local fake = (testMode or (setMode and row.isBox)) and TEST_AURAS or nil
 
   if fake then
     -- Faux debuffs : mêmes règles que les vrais (dissipables d'abord, limite, Âme affaiblie toujours).
@@ -329,8 +354,16 @@ local function UpdateRow(row)
         if key then dispellable[key] = true end
         Show(index, "HARMFUL|RAID", a, "dispel")
       end
-      -- 2) Tous les autres debuffs, en plus discret. Ceux de la liste ALWAYS (Âme affaiblie…)
-      --    ont la même apparence, mais s'affichent même au-delà de la limite ou avec /pdb dissipables.
+      -- 2) Les debuffs de la liste ALWAYS (Âme affaiblie…), trouvés par leur identifiant :
+      --    même apparence que les autres non dissipables, mais toujours affichés.
+      for _, a in ipairs(FindAlways(unit)) do
+        local key = AuraKey(a)
+        if not (key and dispellable[key]) then
+          Show(nil, "HARMFUL", a, "other")
+          if key then dispellable[key] = true end
+        end
+      end
+      -- 3) Tous les autres debuffs, en plus discret.
       for index = 1, 40 do
         local a = GetDebuff(unit, index, "HARMFUL")
         if not a then break end
@@ -543,142 +576,6 @@ ev:SetScript("OnEvent", function(self, event, arg1)
 end)
 
 -------------------------------------------------------------------------------
--- /pdb testraid : faux raid de 20 joueurs, avec plus ou moins de debuffs chacun
--------------------------------------------------------------------------------
-
-local fakeRaid
-local RAID_GROUPS, GROUP_SIZE = 4, 5
-local FAKE_W, FAKE_H = 100, 28
-
-local FAKE_CLASSES = { "WARRIOR", "PRIEST", "MAGE", "ROGUE", "DRUID", "HUNTER", "WARLOCK", "PALADIN", "SHAMAN" }
-local FAKE_NAMES = {
-  "Brakmor", "Lumina", "Fizzle", "Ombrelame", "Feuillevent", "Tirelune", "Nyxara", "Aldric", "Tonnerrebrume", "Gorrak",
-  "Séraphine", "Pyrus", "Vexa", "Sylvain", "Arcos", "Morvenna", "Talbrecht", "Ondine", "Krag", "Elowen",
-}
--- Debuffs de test par joueur : de 0 à bien plus que la limite.
-local FAKE_COUNTS = { 0, 1, 2, 3, 0, 5, 8, 1, 12, 0, 2, 16, 4, 0, 25, 1, 6, 0, 3, 20 }
-
-local FAKE_POOL = {
-  { kind = "dispel", dispelName = "Magic",   label = "Magie, dissipable",          icon = "Interface\\Icons\\Spell_Frost_FrostNova" },
-  { kind = "other",  dispelName = "Curse",   label = "Malédiction",                icon = "Interface\\Icons\\Spell_Shadow_CurseOfSargeras" },
-  { kind = "other",  label = "non dissipable",                                    icon = "Interface\\Icons\\Ability_Gouge" },
-  { kind = "dispel", dispelName = "Poison",  label = "Poison, dissipable",         icon = "Interface\\Icons\\Spell_Nature_CorrosiveBreath" },
-  { kind = "other",  dispelName = "Disease", label = "Maladie",                    icon = "Interface\\Icons\\Spell_Shadow_AbominationExplosion" },
-  { kind = "other",  label = "non dissipable",                                    icon = "Interface\\Icons\\Spell_Shadow_ShadowWordPain" },
-  { kind = "dispel", dispelName = "Magic",   label = "Magie, dissipable",          icon = "Interface\\Icons\\Spell_Nature_Slow" },
-  { kind = "other",  label = "non dissipable",                                    icon = "Interface\\Icons\\Spell_Fire_Immolation" },
-}
-local FAKE_WEAKENED_SOUL = { kind = "other", always = true, label = "Âme affaiblie, toujours affichée",
-                             icon = "Interface\\Icons\\Spell_Holy_AshesToAshes", applications = 1, duration = 15 }
-
-local FAKE_BUFFS = {
-  { kind = "buff", label = "buff", icon = "Interface\\Icons\\Spell_Holy_WordFortitude",     applications = 1, duration = 0 },
-  { kind = "buff", label = "buff", icon = "Interface\\Icons\\Spell_Nature_Regeneration",    applications = 1, duration = 0 },
-  { kind = "buff", label = "buff", icon = "Interface\\Icons\\Spell_Holy_MagicalSentry",     applications = 1, duration = 0 },
-  { kind = "buff", label = "buff", icon = "Interface\\Icons\\Spell_Nature_Rejuvenation",    applications = 1, duration = 12, elapsed = 3 },
-  { kind = "buff", label = "buff", icon = "Interface\\Icons\\Spell_Holy_PowerWordShield",   applications = 1, duration = 30, elapsed = 10 },
-}
-
-local function FakeAuras(member, count)
-  local list = {}
-  for j = 1, count do
-    local p = FAKE_POOL[(member + j) % #FAKE_POOL + 1]
-    list[j] = { kind = p.kind, dispelName = p.dispelName, label = p.label, icon = p.icon,
-                applications = (j % 5 == 0) and 3 or 1,
-                duration = (j % 4 == 0) and 0 or (10 + (member * 7 + j * 3) % 50),
-                elapsed = (member + j) % 9 }
-  end
-  -- Un joueur sur quatre a aussi Âme affaiblie, rangée en dernier : elle doit quand même s'afficher.
-  if member % 4 == 0 then list[#list + 1] = FAKE_WEAKENED_SOUL end
-  -- Quelques buffs, visibles si « Afficher les buffs » est coché.
-  for j = 1, member % 4 + 1 do
-    list[#list + 1] = FAKE_BUFFS[(member + j) % #FAKE_BUFFS + 1]
-  end
-  return list
-end
-
-local function LayoutFakeRaid()
-  local s, max = DB.size, DB.max
-  local rowW = max * (s + GAP)
-  local colW, stepY
-  if DB.position == "droite" then
-    colW, stepY = FAKE_W + 4 + rowW + 12, FAKE_H + 8
-  else
-    colW, stepY = math.max(FAKE_W, rowW) + 12, FAKE_H + 2 + s + 10
-  end
-  fakeRaid:SetSize(colW * RAID_GROUPS + 20, stepY * GROUP_SIZE + 50)
-  for i, m in ipairs(fakeRaid.members) do
-    local g, k = math.floor((i - 1) / GROUP_SIZE), (i - 1) % GROUP_SIZE
-    m:ClearAllPoints()
-    m:SetPoint("TOPLEFT", fakeRaid, "TOPLEFT", 10 + g * colW, -36 - k * stepY)
-    m.row.sized = nil
-    AnchorRow(m.row)
-    UpdateRow(m.row)
-  end
-end
-
-local function CreateFakeRaid()
-  fakeRaid = CreateFrame("Frame", "PartyDebuffsTestRaid", UIParent)
-  fakeRaid:SetFrameStrata("DIALOG")
-  fakeRaid:SetPoint("CENTER")
-  fakeRaid:SetMovable(true)
-  fakeRaid:SetClampedToScreen(true)
-  fakeRaid:EnableMouse(true)
-  fakeRaid:RegisterForDrag("LeftButton")
-  fakeRaid:SetScript("OnDragStart", fakeRaid.StartMoving)
-  fakeRaid:SetScript("OnDragStop", fakeRaid.StopMovingOrSizing)
-
-  local bg = fakeRaid:CreateTexture(nil, "BACKGROUND")
-  bg:SetAllPoints()
-  bg:SetColorTexture(0, 0, 0, 0.75)
-  local title = fakeRaid:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  title:SetPoint("TOPLEFT", 10, -10)
-  title:SetText("PartyDebuffs : faux raid (glisse pour déplacer, /pdb testraid pour fermer)")
-  local close = CreateFrame("Button", nil, fakeRaid, "UIPanelCloseButton")
-  close:SetPoint("TOPRIGHT", 0, 0)
-  close:SetScript("OnClick", function() fakeRaid:Hide() end)
-
-  fakeRaid.members = {}
-  for i = 1, RAID_GROUPS * GROUP_SIZE do
-    local m = CreateFrame("Frame", nil, fakeRaid)
-    m:SetSize(FAKE_W, FAKE_H)
-    local mbg = m:CreateTexture(nil, "BACKGROUND")
-    mbg:SetAllPoints()
-    mbg:SetColorTexture(0.15, 0.15, 0.15, 1)
-    local class = FAKE_CLASSES[(i - 1) % #FAKE_CLASSES + 1]
-    local c = RAID_CLASS_COLORS and RAID_CLASS_COLORS[class] or { r = 0.5, g = 0.5, b = 0.5 }
-    local bar = m:CreateTexture(nil, "ARTWORK")
-    bar:SetPoint("TOPLEFT", 1, -1)
-    bar:SetPoint("BOTTOMLEFT", 1, 1)
-    bar:SetWidth((FAKE_W - 2) * (0.35 + ((i * 37) % 65) / 100))
-    bar:SetColorTexture(c.r, c.g, c.b, 1)
-    local name = m:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    name:SetPoint("LEFT", 4, 0)
-    name:SetText(FAKE_NAMES[i] .. " |cffaaaaaa(" .. FAKE_COUNTS[i] .. ")|r")
-
-    m.row = NewRow(m)
-    m.row:SetFrameStrata("DIALOG")
-    m.row.fakeAuras = FakeAuras(i, FAKE_COUNTS[i])
-    m.row:Show()
-    fakeRaid.members[i] = m
-  end
-  fakeRaid:Hide()
-end
-
-local function ToggleFakeRaid()
-  if not fakeRaid then CreateFakeRaid() end
-  if fakeRaid:IsShown() then
-    fakeRaid:Hide()
-    Print("faux raid fermé.")
-  else
-    fakeRaid:Show()
-    LayoutFakeRaid()
-    Print("faux raid affiché. Entre parenthèses : le nombre de debuffs de chaque joueur. "
-          .. "Change /pdb max, taille, position ou dissipables pour voir comment ça réagit.")
-  end
-end
-
--------------------------------------------------------------------------------
 -- /pdb set : fenêtre de réglages
 -------------------------------------------------------------------------------
 
@@ -688,15 +585,17 @@ local VERSION = (GetMeta and GetMeta(ADDON, "Version")) or "?"
 
 local function RefreshAll()
   Layout()
-  if fakeRaid and fakeRaid:IsShown() then LayoutFakeRaid() end
 end
 
 local function AddCheck(parent, y, text, get, set)
   local c = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
   c:SetSize(24, 24)
-  c:SetPoint("TOPLEFT", 14, y)
+  c:SetPoint("TOPLEFT", 10, y)
   local label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   label:SetPoint("LEFT", c, "RIGHT", 4, 0)
+  label:SetPoint("RIGHT", parent, "RIGHT", -10, 0)
+  label:SetJustifyH("LEFT")
+  label:SetWordWrap(false)
   label:SetText(text)
   c:SetScript("OnClick", function(self) set(self:GetChecked() and true or false); RefreshAll() end)
   c.Sync = function(self) self:SetChecked(get()) end
@@ -705,11 +604,18 @@ end
 
 local function AddSlider(parent, y, text, min, max, get, set)
   local label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-  label:SetPoint("TOPLEFT", 18, y)
+  label:SetPoint("TOPLEFT", 14, y)
   local s = CreateFrame("Slider", nil, parent)
   s:SetOrientation("HORIZONTAL")
-  s:SetSize(260, 16)
-  s:SetPoint("TOPLEFT", 18, y - 18)
+  s:SetHeight(16)
+  s:SetPoint("TOPLEFT", 40, y - 20)
+  s:SetPoint("RIGHT", parent, "RIGHT", -40, 0)
+  local low = parent:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+  low:SetPoint("RIGHT", s, "LEFT", -6, 0)
+  low:SetText(min)
+  local high = parent:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+  high:SetPoint("LEFT", s, "RIGHT", 6, 0)
+  high:SetText(max)
   s:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
   local track = s:CreateTexture(nil, "BACKGROUND")
   track:SetPoint("LEFT")
@@ -750,9 +656,23 @@ local function SyncGui()
   gui.testButton:SetText(testMode and "Arrêter le test" or "Test")
 end
 
+-- Même style que les fenêtres de QuestChums et Red Flag : cadre Blizzard avec titre, encarts.
+local GUI_W = 460
+
+local function Section(parent, y, height, title)
+  local inset = CreateFrame("Frame", nil, parent, "InsetFrameTemplate")
+  inset:SetPoint("TOPLEFT", 14, y)
+  inset:SetPoint("RIGHT", parent, "RIGHT", -14, 0)
+  inset:SetHeight(height)
+  local label = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  label:SetPoint("BOTTOMLEFT", inset, "TOPLEFT", 4, 3)
+  label:SetText(title)
+  return inset
+end
+
 local function CreateGui()
-  gui = CreateFrame("Frame", "PartyDebuffsSettings", UIParent)
-  gui:SetSize(310, 470)
+  gui = CreateFrame("Frame", "PartyDebuffsSettings", UIParent, "BasicFrameTemplateWithInset")
+  gui:SetWidth(GUI_W)
   gui:SetPoint("CENTER", 200, 0)
   gui:SetFrameStrata("DIALOG")
   gui:SetMovable(true)
@@ -761,69 +681,71 @@ local function CreateGui()
   gui:RegisterForDrag("LeftButton")
   gui:SetScript("OnDragStart", gui.StartMoving)
   gui:SetScript("OnDragStop", gui.StopMovingOrSizing)
+  gui.TitleText:SetText("PartyDebuffs — Réglages  |cff999999v" .. VERSION .. "|r")
   -- Fermer la fenêtre (croix, Échap ou bouton) termine le réglage de ton cadre.
   gui:SetScript("OnHide", function() SetBoxEditing(false) end)
   tinsert(UISpecialFrames, "PartyDebuffsSettings")
 
-  local bg = gui:CreateTexture(nil, "BACKGROUND")
-  bg:SetAllPoints()
-  bg:SetColorTexture(0.05, 0.05, 0.08, 0.92)
-  local title = gui:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  title:SetPoint("TOPLEFT", 14, -12)
-  title:SetText("PartyDebuffs")
-  local version = gui:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-  version:SetPoint("LEFT", title, "RIGHT", 6, -1)
-  version:SetText("v" .. VERSION)
-  local close = CreateFrame("Button", nil, gui, "UIPanelCloseButton")
-  close:SetPoint("TOPRIGHT", 0, 0)
+  local w = {}
 
-  local w, y = {}, -40
-  local function check(text, key)
-    w[#w + 1] = AddCheck(gui, y, text, function() return DB[key] end, function(v) DB[key] = v end)
-    y = y - 26
+  -- Affichage
+  local checks = {
+    { "Afficher les debuffs", "showDebuffs" },
+    { "Afficher les buffs", "showBuffs" },
+    { "Seulement les debuffs que tu peux dissiper", "onlyDispellable" },
+    { "Afficher le temps restant sur les icônes", "showTimer" },
+    { "Afficher tes propres auras (cadre bleu)", "showPlayer" },
+    { "Rangées à droite des cadres du groupe (sinon dessous)", "position" },
+  }
+  local y = -54
+  local display = Section(gui, y, #checks * 26 + 12, "Affichage")
+  for i, c in ipairs(checks) do
+    local text, key = c[1], c[2]
+    local get, set
+    if key == "position" then
+      get = function() return DB.position == "droite" end
+      set = function(v) DB.position = v and "droite" or "dessous" end
+    else
+      get = function() return DB[key] end
+      set = function(v) DB[key] = v end
+    end
+    w[#w + 1] = AddCheck(display, -6 - (i - 1) * 26, text, get, set)
   end
-  check("Afficher les debuffs", "showDebuffs")
-  check("Afficher les buffs", "showBuffs")
-  check("Seulement les debuffs que tu peux dissiper", "onlyDispellable")
-  check("Afficher le temps restant", "showTimer")
-  check("Afficher tes propres auras (cadre bleu)", "showPlayer")
-  w[#w + 1] = AddCheck(gui, y, "Rangées à droite des cadres (sinon dessous)",
-    function() return DB.position == "droite" end,
-    function(v) DB.position = v and "droite" or "dessous" end)
+  y = y - display:GetHeight() - 30
+
+  -- Taille
+  local size = Section(gui, y, 112, "Taille")
+  w[#w + 1] = AddSlider(size, -10, "Taille des icônes", 12, 48,
+    function() return DB.size end, function(v) DB.size = v end)
+  w[#w + 1] = AddSlider(size, -60, "Icônes par membre du groupe", 1, 16,
+    function() return DB.max end, function(v) DB.max = v end)
+  y = y - size:GetHeight() - 10
+
+  local hint = gui:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  hint:SetPoint("TOPLEFT", 18, y)
+  hint:SetPoint("RIGHT", gui, "RIGHT", -18, 0)
+  hint:SetJustifyH("LEFT")
+  hint:SetSpacing(2)
+  hint:SetText("Le cadre bleu contient tes auras. Glisse-le pour le déplacer, et tire son coin en bas "
+               .. "à droite pour agrandir la grille : plus de colonnes et de lignes.")
   y = y - 40
 
-  w[#w + 1] = AddSlider(gui, y, "Taille des icônes", 12, 48,
-    function() return DB.size end, function(v) DB.size = v end)
-  y = y - 50
-  w[#w + 1] = AddSlider(gui, y, "Icônes par membre du groupe", 1, 16,
-    function() return DB.max end, function(v) DB.max = v end)
-  y = y - 50
-
-  local hint = gui:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  hint:SetPoint("TOPLEFT", 18, y)
-  hint:SetWidth(275)
-  hint:SetJustifyH("LEFT")
-  hint:SetText("Le cadre bleu contient tes auras : glisse-le pour le déplacer, tire son coin en bas à droite "
-               .. "pour agrandir la grille (plus de colonnes et de lignes).")
-  y = y - 52
-
-  gui.testButton = AddButton(gui, 14, y, 92, "Test", function()
+  local bw = (GUI_W - 28 - 2 * 8) / 3
+  gui.testButton = AddButton(gui, 14, y, bw, "Test", function()
     testMode = not testMode
     SyncGui()
     RefreshAll()
   end)
-  AddButton(gui, 110, y, 92, "Faux raid", function() ToggleFakeRaid() end)
-  AddButton(gui, 206, y, 92, "Réinitialiser", function()
+  AddButton(gui, 14 + (bw + 8), y, bw, "Réinitialiser", function()
     for k, v in pairs(defaults) do DB[k] = v end
     PlaceBox()
     SyncGui()
     RefreshAll()
   end)
-  y = y - 32
-  AddButton(gui, 110, y, 92, "Terminer", function() gui:Hide() end)
+  AddButton(gui, 14 + 2 * (bw + 8), y, bw, "Terminer", function() gui:Hide() end)
 
   gui.widgets = w
-  gui:SetHeight(-y + 36)
+  gui:SetHeight(-y + 22 + 16)
   gui:Hide()
 end
 
@@ -854,7 +776,6 @@ local function Help()
   Print("  /pdb moi : affiche tes propres debuffs (" .. (DB.showPlayer and "oui" or "non") .. ")")
   Print("  /pdb set : ouvre la fenêtre de réglages (tous les réglages, et le cadre de tes auras à la souris)")
   Print("  /pdb test : affiche de faux debuffs pour voir le rendu")
-  Print("  /pdb testraid : affiche un faux raid de 20 joueurs, avec plus ou moins de debuffs")
   Print("  /pdb debug : liste dans le chat les debuffs lus par l'addon")
   Print("  /pdb reset : réglages par défaut")
 end
@@ -885,9 +806,6 @@ SlashCmdList.PARTYDEBUFFS = function(msg)
     if not DB.showPlayer and setMode then SetBoxEditing(false) end
   elseif cmd == "set" then
     ToggleGui()
-    return
-  elseif cmd == "testraid" then
-    ToggleFakeRaid()
     return
   elseif cmd == "debug" then
     ns:Debug()
@@ -920,8 +838,8 @@ end
 
 function ns:Debug()
   local _, _, _, build = GetBuildInfo()
-  Print(("version du jeu %s, groupe=%s, raid=%s, cadres style raid=%s"):format(
-    Show(build), Show(IsInGroup()), Show(IsInRaid()),
+  Print(("version du jeu %s, combat=%s, groupe=%s, raid=%s, cadres style raid=%s"):format(
+    Show(build), Show(InCombatLockdown()), Show(IsInGroup()), Show(IsInRaid()),
     Show(CompactPartyFrame and CompactPartyFrame:IsShown() or false)))
   Print("API : C_UnitAuras.GetAuraDataByIndex=" .. Show(C_UnitAuras and C_UnitAuras.GetAuraDataByIndex and true or false)
         .. ", UnitDebuff=" .. Show(UnitDebuff and true or false))
@@ -935,6 +853,9 @@ function ns:Debug()
       Print(("%s (%s) : rangée=%s, visible=%s, icônes=%d"):format(unit, Show(UnitName(unit)),
         row and (row.owner:GetName() or "?") or "aucune", Show(row and row:IsVisible() or false),
         row and #row.icons or 0))
+      local found = FindAlways(unit)
+      Print(("    recherche par identifiant (Âme affaiblie…) : %d trouvé(s)%s"):format(#found,
+        found[1] and (", aura " .. Show(found[1].auraInstanceID)) or ""))
       for index = 1, 40 do
         local a = GetDebuff(unit, index, "HARMFUL")
         if not a then
