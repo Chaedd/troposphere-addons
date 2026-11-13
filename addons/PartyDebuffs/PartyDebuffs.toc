@@ -3,7 +3,7 @@
 ## Notes: Affiche les debuffs (et, au choix, les buffs) sous les cadres des membres du groupe. /pdb pour les réglages.
 ## Author: Chaedd
 ## IconTexture: Interface\Icons\Spell_Shadow_ShadowWordPain
-## Version: 1.1.0
+## Version: 1.1.1
 ## SavedVariables: PartyDebuffsDB
 
 Core.lua

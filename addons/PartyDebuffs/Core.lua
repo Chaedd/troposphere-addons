@@ -53,11 +53,8 @@ local function plain(v) if secret(v) then return nil end return v end
 -- Lecture des debuffs
 -------------------------------------------------------------------------------
 
--- Lit un debuff (filtre "HARMFUL…") ou un buff (filtre "HELPFUL…").
+-- Lit un debuff (filtre "HARMFUL…") ou un buff (filtre "HELPFUL…") avec les anciennes fonctions.
 local function GetDebuff(unit, index, filter)
-  if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
-    return C_UnitAuras.GetAuraDataByIndex(unit, index, filter)
-  end
   local read = UnitAura or (filter:find("HELPFUL") and UnitBuff or UnitDebuff)
   if read then
     local name, icon, count, dispelType, duration, expirationTime, _, _, _, spellId = read(unit, index, filter)
@@ -66,6 +63,44 @@ local function GetDebuff(unit, index, filter)
                duration = duration, expirationTime = expirationTime, spellId = spellId }
     end
   end
+end
+
+-- Toutes les auras d'une unité pour un filtre : liste de { a = données, index = position ou nil }.
+-- Sur les clients récents, en combat en instance, le jeu interdit de lire les auras des autres
+-- une par une (GetAuraDataByIndex lève une erreur) : on passe alors par leurs identifiants d'aura.
+-- Tout est protégé par pcall : si le jeu refuse tout, la liste est vide, sans erreur Lua.
+local function AuraList(unit, filter)
+  local list = {}
+  local api = C_UnitAuras
+  if not (api and api.GetAuraDataByIndex) then
+    for index = 1, 40 do
+      local a = GetDebuff(unit, index, filter)
+      if not a then break end
+      list[#list + 1] = { a = a, index = index }
+    end
+    return list
+  end
+
+  local blocked = false
+  for index = 1, 40 do
+    local ok, a = pcall(api.GetAuraDataByIndex, unit, index, filter)
+    if not ok then blocked = true; break end
+    if not a then break end
+    list[#list + 1] = { a = a, index = index }
+  end
+  if not blocked then return list end
+
+  list = {}
+  if api.GetUnitAuraInstanceIDs and api.GetAuraDataByAuraInstanceID then
+    local ok, ids = pcall(api.GetUnitAuraInstanceIDs, unit, filter)
+    if ok and type(ids) == "table" then
+      for _, id in ipairs(ids) do
+        local ok2, a = pcall(api.GetAuraDataByAuraInstanceID, unit, id)
+        if ok2 and type(a) == "table" then list[#list + 1] = { a = a } end
+      end
+    end
+  end
+  return list
 end
 
 -- Debuffs toujours affichés, même avec /pdb dissipables et au-delà de la taille de la grille.
@@ -349,10 +384,9 @@ local function UpdateRow(row)
     if DB.showDebuffs then
       -- 1) Debuffs que tu peux dissiper, mis en avant.
       local dispellable = {}
-      for index = 1, 40 do
+      for _, e in ipairs(AuraList(unit, "HARMFUL|RAID")) do
         if shown >= max then break end
-        local a = GetDebuff(unit, index, "HARMFUL|RAID")
-        if not a then break end
+        local a, index = e.a, e.index
         local key = AuraKey(a)
         if key then dispellable[key] = true end
         Show(index, "HARMFUL|RAID", a, "dispel")
@@ -367,9 +401,8 @@ local function UpdateRow(row)
         end
       end
       -- 3) Tous les autres debuffs, en plus discret.
-      for index = 1, 40 do
-        local a = GetDebuff(unit, index, "HARMFUL")
-        if not a then break end
+      for _, e in ipairs(AuraList(unit, "HARMFUL")) do
+        local a, index = e.a, e.index
         local key = AuraKey(a)
         if not (key and dispellable[key]) then
           if IsAlways(a) or (not DB.onlyDispellable and shown < max) then
@@ -380,10 +413,9 @@ local function UpdateRow(row)
     end
     -- 3) Les buffs, après les debuffs, dans la place qui reste.
     if DB.showBuffs then
-      for index = 1, 40 do
+      for _, e in ipairs(AuraList(unit, "HELPFUL")) do
         if shown >= max then break end
-        local a = GetDebuff(unit, index, "HELPFUL")
-        if not a then break end
+        local a, index = e.a, e.index
         Show(index, "HELPFUL", a, "buff")
       end
     end
@@ -856,14 +888,12 @@ function ns:Debug()
       local found = FindAlways(unit)
       Print(("    recherche par identifiant (Âme affaiblie…) : %d trouvé(s)%s"):format(#found,
         found[1] and (", aura " .. Show(found[1].auraInstanceID)) or ""))
-      for index = 1, 40 do
-        local a = GetDebuff(unit, index, "HARMFUL")
-        if not a then
-          if index == 1 then Print("    aucun debuff lu") end
-          break
-        end
-        Print(("    %d. %s, sort %s, type %s, toujours=%s"):format(index, Show(a.name), Show(a.spellId),
-          Show(a.dispelName), Show(IsAlways(a))))
+      local list = AuraList(unit, "HARMFUL")
+      if #list == 0 then Print("    aucun debuff lu (ou lecture refusée par le jeu)") end
+      for i, e in ipairs(list) do
+        local a = e.a
+        Print(("    %d. %s, sort %s, type %s, toujours=%s%s"):format(i, Show(a.name), Show(a.spellId),
+          Show(a.dispelName), Show(IsAlways(a)), e.index and "" or " (lu par identifiant)"))
       end
     end
   end
