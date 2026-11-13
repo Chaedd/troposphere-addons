@@ -4,7 +4,6 @@ PartyDebuffs = ns
 
 local defaults = {
   size = 20,             -- taille d'une icône, en pixels
-  max = 8,               -- icônes affichées par membre, au plus
   position = "dessous",  -- "dessous" ou "droite" du cadre
   onlyDispellable = false,
   showTimer = true,
@@ -18,7 +17,7 @@ local defaults = {
 local DB
 local rows = {}          -- cadre Blizzard → rangée d'icônes
 local testMode = false
-local setMode = false    -- /pdb set : cadre de tes debuffs déplaçable et redimensionnable
+local setMode = false    -- /pdb : cadre de tes debuffs déplaçable et redimensionnable
 local box                -- cadre invisible qui contient tes debuffs
 local GAP = 4            -- espace entre deux icônes
 
@@ -45,7 +44,10 @@ local TEST_AURAS = {
 local function Print(s) DEFAULT_CHAT_FRAME:AddMessage("|cffcc4444PartyDebuffs|r : " .. s) end
 
 -- Valeur protégée par le jeu (en combat, sur les clients récents) : on ne peut ni la comparer ni calculer avec.
+-- Même « if v » est interdit sur une valeur protégée : toujours tester secret() AVANT la valeur.
 local function secret(v) return issecretvalue and issecretvalue(v) or false end
+-- La valeur si elle est lisible, sinon nil.
+local function plain(v) if secret(v) then return nil end return v end
 
 -------------------------------------------------------------------------------
 -- Lecture des debuffs
@@ -66,7 +68,7 @@ local function GetDebuff(unit, index, filter)
   end
 end
 
--- Debuffs toujours affichés, même avec /pdb dissipables et au-delà de /pdb max.
+-- Debuffs toujours affichés, même avec /pdb dissipables et au-delà de la taille de la grille.
 local ALWAYS = {
   [6788] = true,   -- Âme affaiblie (Weakened Soul), après Mot de pouvoir : Bouclier du prêtre
 }
@@ -84,10 +86,10 @@ for id in pairs(ALWAYS) do
 end
 
 local function IsAlways(a)
-  local id = a.spellId
-  if id and not secret(id) then return ALWAYS[id] or false end
-  local name = a.name
-  if name and not secret(name) then return ALWAYS_NAMES[name] or false end
+  local id = plain(a.spellId)
+  if id then return ALWAYS[id] or false end
+  local name = plain(a.name)
+  if name then return ALWAYS_NAMES[name] or false end
   return false
 end
 
@@ -116,10 +118,10 @@ end
 
 -- Identifie un debuff pour ne pas l'afficher deux fois (il ressort dans les deux listes : dissipables et tous).
 local function AuraKey(a)
-  local id = a.auraInstanceID
-  if id and not secret(id) then return id end
-  local name, expiration = a.name, a.expirationTime
-  if name and expiration and not secret(name) and not secret(expiration) then
+  local id = plain(a.auraInstanceID)
+  if id then return id end
+  local name, expiration = plain(a.name), plain(a.expirationTime)
+  if name and expiration then
     return name .. ":" .. expiration
   end
 end
@@ -208,7 +210,8 @@ local BUFF_COLOR = { 0.85, 0.70, 0.20 }
 local function SetStyle(b, kind, dispelName)
   local c
   if kind == "dispel" then
-    c = (dispelName and not secret(dispelName) and TYPE_COLORS[dispelName]) or TYPE_COLORS.none
+    local t = plain(dispelName)
+    c = (t and TYPE_COLORS[t]) or TYPE_COLORS.none
   elseif kind == "buff" then
     c = BUFF_COLOR
   else
@@ -234,10 +237,11 @@ local function SetCount(b, unit, a)
   local n = a.applications
   if secret(n) then
     local ok, text = false, nil
-    if a.auraInstanceID and C_UnitAuras and C_UnitAuras.GetAuraApplicationDisplayCount then
-      ok, text = pcall(C_UnitAuras.GetAuraApplicationDisplayCount, unit, a.auraInstanceID, 2, 99)
+    local id = plain(a.auraInstanceID)
+    if id and C_UnitAuras and C_UnitAuras.GetAuraApplicationDisplayCount then
+      ok, text = pcall(C_UnitAuras.GetAuraApplicationDisplayCount, unit, id, 2, 99)
     end
-    b.count:SetText(ok and text or "")
+    if ok then b.count:SetText(text) else b.count:SetText("") end
   else
     b.count:SetText(n and n > 1 and n or "")
   end
@@ -249,10 +253,11 @@ local function SetTimer(b, unit, a)
   if secret(duration) or secret(expiration) then
     -- Durées protégées : le jeu sait quand même les afficher via un objet « durée ».
     local ok, d = false, nil
-    if a.auraInstanceID and C_UnitAuras and C_UnitAuras.GetAuraDuration and b.cd.SetCooldownFromDurationObject then
-      ok, d = pcall(C_UnitAuras.GetAuraDuration, unit, a.auraInstanceID)
+    local id = plain(a.auraInstanceID)
+    if id and C_UnitAuras and C_UnitAuras.GetAuraDuration and b.cd.SetCooldownFromDurationObject then
+      ok, d = pcall(C_UnitAuras.GetAuraDuration, unit, id)
     end
-    if ok and d then b.cd:SetCooldownFromDurationObject(d) else b.cd:Clear() end
+    if not (ok and d and pcall(b.cd.SetCooldownFromDurationObject, b.cd, d)) then b.cd:Clear() end
   elseif duration and duration > 0 and expiration then
     b.cd:SetCooldown(expiration - duration, duration)
   else
@@ -266,19 +271,17 @@ end
 
 -- Taille des icônes, nombre au plus et icônes par ligne.
 -- Ton cadre est une grille : plus il est large et haut, plus il contient de colonnes et de lignes.
+-- Les rangées du groupe reprennent la même grille.
 local function RowGeometry(row)
   local s = DB.size
-  if row.isBox then
-    local cols = math.max(1, math.floor((DB.boxW + GAP) / (s + GAP)))
-    local lines = math.max(1, math.floor((DB.boxH + GAP) / (s + GAP)))
-    return s, cols * lines, cols
-  end
-  return s, DB.max, DB.max
+  local cols = math.max(1, math.floor((DB.boxW + GAP) / (s + GAP)))
+  local lines = math.max(1, math.floor((DB.boxH + GAP) / (s + GAP)))
+  return s, cols * lines, cols, lines
 end
 
 local function PlaceIcons(row)
-  local s, max, cols = RowGeometry(row)
-  if not row.isBox then row:SetSize(max * (s + GAP), s) end
+  local s, _, cols, lines = RowGeometry(row)
+  if not row.isBox then row:SetSize(cols * (s + GAP) - GAP, lines * (s + GAP) - GAP) end
   for i, b in ipairs(row.icons) do
     local col, line = (i - 1) % cols, math.floor((i - 1) / cols)
     b:SetSize(s, s)
@@ -293,7 +296,7 @@ local function AnchorRow(row)
   if row.isBox then
     row:SetAllPoints(f)
   elseif DB.position == "droite" then
-    row:SetPoint("LEFT", f, "RIGHT", 4, 0)
+    row:SetPoint("TOPLEFT", f, "TOPRIGHT", 4, 0)
   else
     row:SetPoint("TOPLEFT", f, "BOTTOMLEFT", 2, -2)
   end
@@ -304,7 +307,7 @@ local function UpdateRow(row)
   local shown = 0
   local _, max = RowGeometry(row)
 
-  -- En mode /pdb set, la souris sert à déplacer ton cadre : pas d'infobulle sur ses icônes.
+  -- En mode /pdb, la souris sert à déplacer ton cadre : pas d'infobulle sur ses icônes.
   local mouse = not (setMode and row.isBox)
   local fake = (testMode or (setMode and row.isBox)) and TEST_AURAS or nil
 
@@ -335,7 +338,7 @@ local function UpdateRow(row)
       shown = shown + 1
       local b = row.icons[shown] or CreateIcon(row)
       row.icons[shown] = b
-      b.test, b.unit, b.index, b.filter, b.auraInstanceID = nil, unit, index, auraFilter, a.auraInstanceID
+      b.test, b.unit, b.index, b.filter, b.auraInstanceID = nil, unit, index, auraFilter, plain(a.auraInstanceID)
       b.icon:SetTexture(a.icon)
       SetStyle(b, kind, a.dispelName)
       SetCount(b, unit, a)
@@ -413,7 +416,7 @@ local function GetRow(frame)
 end
 
 -------------------------------------------------------------------------------
--- Ton cadre : invisible, accroché à ton cadre joueur, réglable avec /pdb set
+-- Ton cadre : invisible, accroché à ton cadre joueur, réglable avec /pdb
 -------------------------------------------------------------------------------
 
 local function PlaceBox()
@@ -459,7 +462,7 @@ local function CreateBox()
   if box.SetResizeBounds then box:SetResizeBounds(16, 12, 1000, 600)
   elseif box.SetMinResize then box:SetMinResize(16, 12); box:SetMaxResize(1000, 600) end
 
-  -- Visibles seulement pendant /pdb set.
+  -- Visibles seulement pendant /pdb.
   box.bg = box:CreateTexture(nil, "BACKGROUND")
   box.bg:SetAllPoints()
   box.bg:SetColorTexture(0.1, 0.5, 1, 0.3)
@@ -502,12 +505,13 @@ local function PartyFrames()
   if CompactPartyFrame and CompactPartyFrame:IsShown() then
     for i = 1, 5 do
       local f = _G["CompactPartyFrameMember" .. i]
-      if f and f.unit and not (DB.showPlayer and f.unit == "player") then list[#list + 1] = { f, f.unit } end
+      local unit = f and plain(f.unit)
+      if unit and not (DB.showPlayer and unit == "player") then list[#list + 1] = { f, unit } end
     end
   else
     for i = 1, 4 do
       local f = (PartyFrame and PartyFrame["MemberFrame" .. i]) or _G["PartyMemberFrame" .. i]
-      if f then list[#list + 1] = { f, f.unit or ("party" .. i) } end
+      if f then list[#list + 1] = { f, plain(f.unit) or ("party" .. i) } end
     end
   end
   return list
@@ -576,7 +580,7 @@ ev:SetScript("OnEvent", function(self, event, arg1)
 end)
 
 -------------------------------------------------------------------------------
--- /pdb set : fenêtre de réglages
+-- /pdb : fenêtre de réglages
 -------------------------------------------------------------------------------
 
 local gui
@@ -714,11 +718,9 @@ local function CreateGui()
   y = y - display:GetHeight() - 30
 
   -- Taille
-  local size = Section(gui, y, 112, "Taille")
+  local size = Section(gui, y, 60, "Taille")
   w[#w + 1] = AddSlider(size, -10, "Taille des icônes", 12, 48,
     function() return DB.size end, function(v) DB.size = v end)
-  w[#w + 1] = AddSlider(size, -60, "Icônes par membre du groupe", 1, 16,
-    function() return DB.max end, function(v) DB.max = v end)
   y = y - size:GetHeight() - 10
 
   local hint = gui:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -727,7 +729,8 @@ local function CreateGui()
   hint:SetJustifyH("LEFT")
   hint:SetSpacing(2)
   hint:SetText("Le cadre bleu contient tes auras. Glisse-le pour le déplacer, et tire son coin en bas "
-               .. "à droite pour agrandir la grille : plus de colonnes et de lignes.")
+               .. "à droite pour agrandir la grille : plus de colonnes et de lignes. Les membres du groupe "
+               .. "reprennent la même grille.")
   y = y - 40
 
   local bw = (GUI_W - 28 - 2 * 8) / 3
@@ -769,15 +772,15 @@ end
 local function Help()
   Print("commandes :")
   Print("  /pdb taille <12-48>  (actuellement " .. DB.size .. ")")
-  Print("  /pdb max <1-16>  (actuellement " .. DB.max .. ")")
   Print("  /pdb position dessous|droite  (actuellement " .. DB.position .. ")")
   Print("  /pdb dissipables : seulement ceux que tu peux dissiper (" .. (DB.onlyDispellable and "oui" or "non") .. ")")
   Print("  /pdb chrono : affiche le temps restant (" .. (DB.showTimer and "oui" or "non") .. ")")
   Print("  /pdb moi : affiche tes propres debuffs (" .. (DB.showPlayer and "oui" or "non") .. ")")
-  Print("  /pdb set : ouvre la fenêtre de réglages (tous les réglages, et le cadre de tes auras à la souris)")
+  Print("  /pdb : ouvre la fenêtre de réglages (tous les réglages, et la grille de tes auras à la souris)")
   Print("  /pdb test : affiche de faux debuffs pour voir le rendu")
   Print("  /pdb debug : liste dans le chat les debuffs lus par l'addon")
   Print("  /pdb reset : réglages par défaut")
+  Print("  /pdb aide : cette liste")
 end
 
 SLASH_PARTYDEBUFFS1 = "/pdb"
@@ -788,9 +791,6 @@ SlashCmdList.PARTYDEBUFFS = function(msg)
   if cmd == "taille" and n then
     DB.size = math.max(12, math.min(48, math.floor(n)))
     Print("taille des icônes : " .. DB.size)
-  elseif cmd == "max" and n then
-    DB.max = math.max(1, math.min(16, math.floor(n)))
-    Print("icônes par membre : " .. DB.max)
   elseif cmd == "position" and (arg == "dessous" or arg == "droite") then
     DB.position = arg
     Print("position : " .. arg)
@@ -804,7 +804,7 @@ SlashCmdList.PARTYDEBUFFS = function(msg)
     DB.showPlayer = not DB.showPlayer
     Print(DB.showPlayer and "tes debuffs sont affichés." or "tes debuffs ne sont plus affichés.")
     if not DB.showPlayer and setMode then SetBoxEditing(false) end
-  elseif cmd == "set" then
+  elseif cmd == "" or cmd == "set" then
     ToggleGui()
     return
   elseif cmd == "debug" then
@@ -831,8 +831,8 @@ end
 -------------------------------------------------------------------------------
 
 local function Show(v)
-  if v == nil then return "nil" end
   if secret(v) then return "<protégé>" end
+  if v == nil then return "nil" end
   return tostring(v)
 end
 

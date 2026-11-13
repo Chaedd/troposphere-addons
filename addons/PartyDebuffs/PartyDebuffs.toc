@@ -1,9 +1,9 @@
 ## Interface: 16001, 120005, 120007
 ## Title: PartyDebuffs
-## Notes: Affiche les debuffs (et, au choix, les buffs) sous les cadres des membres du groupe. /pdb set pour les réglages.
+## Notes: Affiche les debuffs (et, au choix, les buffs) sous les cadres des membres du groupe. /pdb pour les réglages.
 ## Author: Chaedd
 ## IconTexture: Interface\Icons\Spell_Shadow_ShadowWordPain
-## Version: 1.0.1
+## Version: 1.1.0
 ## SavedVariables: PartyDebuffsDB
 
 Core.lua
