@@ -3,7 +3,7 @@
 ## Notes: Les recettes que ta guilde sait fabriquer, rangées par métier, et qui peut faire chacune d'elles.
 ## Author: Chaedd
 ## IconTexture: Interface\Icons\Trade_BlackSmithing
-## Version: 1.1.0
+## Version: 1.1.1
 ## SavedVariables: GuildCraftDB
 ## SavedVariablesPerCharacter: GuildCraftCharDB
 

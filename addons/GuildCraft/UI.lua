@@ -31,24 +31,38 @@ end
 
 -- Noms, icônes et liens des recettes. Les objets pas encore connus du jeu arrivent plus tard.
 local GetItemInfoFn = (C_Item and C_Item.GetItemInfo) or GetItemInfo
-local GetItemIconFn = (C_Item and C_Item.GetItemIconByID) or GetItemIcon
+local GetItemInfoInstantFn = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant
 local GetSpellLinkFn = (C_Spell and C_Spell.GetSpellLink) or GetSpellLink
 local cache, waiting = {}, {}
+local QUESTION = "Interface\\Icons\\INV_Misc_QuestionMark"
+
+-- Icône d'un objet : celle de GetItemInfo quand l'objet est chargé, sinon celle de la base
+-- de données du jeu (GetItemInfoInstant), toujours disponible. GetItemIconByID renvoie
+-- l'icône générique tant que l'objet n'est pas chargé : on ne s'en sert pas.
+local function itemIcon(id, loadedIcon)
+  if loadedIcon then return loadedIcon end
+  if GetItemInfoInstantFn then
+    local ok, _, _, _, _, icon = pcall(GetItemInfoInstantFn, id)
+    if ok and icon then return icon end
+  end
+  return QUESTION
+end
+ns.ItemIcon = itemIcon
 
 local function recipe(t)
   local c = cache[t]
   if c then return c end
   local kind, id = M.ParseToken(t)
   if kind == "i" then
-    local name, link, quality = GetItemInfoFn(id)
+    local name, link, quality, _, _, _, _, _, _, icon = GetItemInfoFn(id)
     if name then
-      c = { name = name, link = link, quality = quality, icon = GetItemIconFn and GetItemIconFn(id), kind = kind, id = id }
+      c = { name = name, link = link, quality = quality, icon = itemIcon(id, icon), kind = kind, id = id }
       cache[t] = c
       return c
     end
     waiting[id] = true
     if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, id) end
-    return { name = "Objet n° " .. id, icon = GetItemIconFn and GetItemIconFn(id), kind = kind, id = id, pending = true }
+    return { name = "Objet n° " .. id, icon = itemIcon(id), kind = kind, id = id, pending = true }
   end
   local name, icon = ns:SpellInfo(id)
   c = { name = name or ("Recette n° " .. id), icon = icon, kind = kind, id = id }
@@ -193,12 +207,12 @@ local function reagentLines(lines, token)
     return
   end
   for _, r in ipairs(list) do
-    local name, _, quality = GetItemInfoFn(r.id)
+    local name, _, quality, _, _, _, _, _, _, loadedIcon = GetItemInfoFn(r.id)
     if not name then
       waiting[r.id] = true
       if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, r.id) end
     end
-    local icon = GetItemIconFn and GetItemIconFn(r.id)
+    local icon = itemIcon(r.id, loadedIcon)
     local have = GetItemCountFn and GetItemCountFn(r.id, true) or 0
     local label = color(qualityColor(quality), name or ("Objet n° " .. r.id))
     local owned = color(have >= r.n and "ff40ff40" or COLORS.dim, "(tu en as " .. have .. ")")
