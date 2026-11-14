@@ -123,6 +123,24 @@ function ns:RetailReagents(recipeID)
   return list
 end
 
+-- Objet fabriqué par une recette (API moderne), ou nil pour un enchantement.
+local function outputItem(recipeID, info)
+  local T = C_TradeSkillUI
+  if T.GetRecipeOutputItemData then
+    local ok, data = pcall(T.GetRecipeOutputItemData, recipeID)
+    if ok and type(data) == "table" then
+      local id = data.itemID or linkItemID(data.hyperlink)
+      if id then return id end
+    end
+  end
+  if T.GetRecipeItemLink then
+    local ok, link = pcall(T.GetRecipeItemLink, recipeID)
+    local id = ok and linkItemID(link)
+    if id then return id end
+  end
+  return linkItemID(info and info.hyperlink)
+end
+
 -- Retail : la liste des recettes est complète, même avec un filtre.
 local function scanRetail()
   local T = C_TradeSkillUI
@@ -150,8 +168,12 @@ local function scanRetail()
   for index, id in ipairs(T.GetAllRecipeIDs() or {}) do
     local r = T.GetRecipeInfo(id)
     if r and r.learned and not r.isRecraft and not r.isDummyRecipe then
-      local t = M.Token("s", id)
+      -- Une recette qui fabrique un objet est rangée sous cet objet : son icône, sa qualité
+      -- et son infobulle sont les bonnes (le sort de fabrication a une icône générique).
+      local t = M.Token("i", outputItem(id, r)) or M.Token("s", id)
       if t then
+        local reagents = ns:RetailReagents(id)
+        if reagents and #reagents > 0 then ns:StoreReagents(t, reagents) end
         local c = category(r.categoryID)
         list[#list + 1] = { t = t, c = c.name, order = c.order, index = index }
       end
@@ -164,6 +186,40 @@ local function scanRetail()
   local seq = {}
   for _, e in ipairs(list) do seq[#seq + 1] = { t = e.t, c = e.c } end
   ns:UpdateOwn(p, rank, max, seq, true)
+end
+
+-- Version 1.1.1 et avant : mes recettes étaient rangées sous leur sort de fabrication.
+-- On les passe sous l'objet fabriqué sans attendre que la fenêtre de métier soit rouverte.
+local function convertOwnTokens()
+  if not (C_TradeSkillUI and (C_TradeSkillUI.GetRecipeOutputItemData or C_TradeSkillUI.GetRecipeItemLink)) then return end
+  local changed = false
+  for _, own in pairs(ns.char.profs) do
+    local seen, seq, touched = {}, {}, false
+    for _, e in ipairs(own.seq or {}) do
+      local kind, id = M.ParseToken(e.t)
+      local t = e.t
+      if kind == "s" then
+        local item = M.Token("i", outputItem(id))
+        if item then
+          t, touched = item, true
+          local reagents = ns:RetailReagents(id)
+          if reagents and #reagents > 0 then ns:StoreReagents(t, reagents) end
+        end
+      end
+      if not seen[t] then
+        seen[t] = true
+        seq[#seq + 1] = { t = t, c = e.c }
+      end
+    end
+    if touched then
+      own.seq, own.n, own.hash = seq, #seq, M.Hash(seq)
+      changed = true
+    end
+  end
+  if changed then
+    ns:MirrorOwn()
+    ns:Announce()
+  end
 end
 
 -- Rangs sans ouvrir de fenêtre, et métiers abandonnés.
@@ -232,5 +288,8 @@ function ns:InitScan()
       later("trade", scanTradeSkill)
     end
   end)
-  C_Timer.After(5, function() ns:RefreshOwnRanks() end)
+  C_Timer.After(5, function()
+    if retail then convertOwnTokens() end
+    ns:RefreshOwnRanks()
+  end)
 end
