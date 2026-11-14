@@ -71,6 +71,7 @@ local function recipe(t)
   if name then cache[t] = c end
   return c
 end
+ns.RecipeInfo = recipe
 
 local itemEvents = CreateFrame("Frame")
 itemEvents:RegisterEvent("GET_ITEM_INFO_RECEIVED")
@@ -196,9 +197,9 @@ local GetItemCountFn = (C_Item and C_Item.GetItemCount) or GetItemCount
 -- Composants : nom, quantité, et combien j'en ai (sacs et banque).
 local function reagentLines(lines, token)
   lines[#lines + 1] = color(COLORS.header, "Composants")
+  ns:NeedRecipeData(token)
   local list = ns:Reagents(token)
   if not list then
-    ns:AskReagents(token)
     lines[#lines + 1] = color(COLORS.dim, "   Demandés à la guilde… Un membre qui a ouvert ce métier répondra.")
     return
   end
@@ -225,6 +226,7 @@ function ns:RefreshDetail(e)
   local f = self.window
   if not e then
     f.recipeIcon:Hide()
+    f.track:Hide()
     f.recipeTitle:SetText(self.guild and "Aucune recette" or "Hors guilde")
     f.recipeInfo:SetText("")
     local help
@@ -242,6 +244,9 @@ function ns:RefreshDetail(e)
     local info = e.info
     f.recipeIcon:SetTexture(info.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
     f.recipeIcon:Show()
+    f.track.token = e.token
+    f.track:SetText(self:IsTracked(e.token) and "Ne plus suivre" or "Suivre")
+    f.track:Show()
     f.recipeTitle:SetText(info.kind == "i" and color(qualityColor(info.quality), info.name) or info.name)
     f.recipeInfo:SetText(self:ProfessionName(f.selectedProf) .. " · "
       .. #e.crafters .. (#e.crafters > 1 and " artisans" or " artisan"))
@@ -437,7 +442,16 @@ function ns:CreateUI()
   f.recipeIcon = f.right:CreateTexture(nil, "ARTWORK")
   f.recipeIcon:SetSize(32, 32); f.recipeIcon:SetPoint("TOPLEFT", 10, -10)
   f.recipeTitle = text(f.right, "", "GameFontNormalLarge")
-  f.recipeTitle:SetPoint("TOPLEFT", 50, -10); f.recipeTitle:SetPoint("RIGHT", -12, 0); f.recipeTitle:SetWordWrap(false)
+  f.recipeTitle:SetPoint("TOPLEFT", 50, -10); f.recipeTitle:SetPoint("RIGHT", -128, 0); f.recipeTitle:SetWordWrap(false)
+  f.track = CreateFrame("Button", nil, f.right, "UIPanelButtonTemplate")
+  f.track:SetSize(110, 22); f.track:SetPoint("TOPRIGHT", -10, -10)
+  f.track:SetScript("OnClick", function(self) if self.token then ns:ToggleTrack(self.token) end end)
+  f.track:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Ajoute les composants de la recette à la colonne d'objectifs.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  f.track:SetScript("OnLeave", function() GameTooltip:Hide() end)
   f.recipeInfo = text(f.right, "", "GameFontDisableSmall")
   f.recipeInfo:SetPoint("TOPLEFT", f.recipeTitle, "BOTTOMLEFT", 0, -4)
   local hover = CreateFrame("Frame", nil, f.right)

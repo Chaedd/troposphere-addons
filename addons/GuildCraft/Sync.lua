@@ -5,7 +5,8 @@
 --   G|<membre>|<métier>|<empreinte>               « <membre>, envoie ta liste pour ce métier »
 --   D|<métier>|<empreinte>|<i>|<total>|<jetons>   un morceau de ma liste (« =Catégorie » devant ses recettes)
 --   Q|<jeton>                    « qui connaît les composants de cette recette ? »
---   A|<jeton>|<objet>x<nb>;...   les composants (n'importe quel membre qui les connaît répond)
+--   A|<jeton>|<objet>x<nb>;...|<recette>   les composants et le numéro de recette
+--                                (n'importe quel membre qui les connaît répond)
 --
 -- L'empreinte change dès qu'une recette s'ajoute : on ne redemande une liste que si elle a
 -- changé. Tout passe par la guilde, donc une liste envoyée profite à tous les membres équipés.
@@ -186,10 +187,15 @@ local function flushReagents()
     local recent = reagentAnswered[token] and now - reagentAnswered[token] < 20
     if list and not recent then
       reagentAnswered[token] = now
-      enqueue("A|" .. M.EncodeReagents(token, list))
+      enqueue("A|" .. M.EncodeReagents(token, list, ns:RecipeID(token)))
     end
   end
   reagentPending = {}
+end
+
+-- Il me manque les composants ou le numéro de recette : je demande à la guilde.
+function ns:NeedRecipeData(token)
+  if not self:Reagents(token) or not self:RecipeID(token) then self:AskReagents(token) end
 end
 
 local function onReagentQuestion(body)
@@ -205,11 +211,15 @@ local function onReagentQuestion(body)
 end
 
 local function onReagentAnswer(body)
-  local token, list = M.DecodeReagents(body)
+  local token, list, recipe = M.DecodeReagents(body)
   if not token then return end
-  reagentAnswered[token] = GetTime()
-  reagentPending[token] = nil
+  -- Une réponse sans numéro de recette ne dispense pas de répondre celui qui le connaît.
+  if recipe or not ns:RecipeID(token) then
+    reagentAnswered[token] = GetTime()
+    reagentPending[token] = nil
+  end
   if not GuildCraftDB.reagents[token] then ns:StoreReagents(token, list) end
+  if recipe then ns:SetRecipeID(token, recipe) end
 end
 
 function ns:Receive(prefix, msg, channel, sender)

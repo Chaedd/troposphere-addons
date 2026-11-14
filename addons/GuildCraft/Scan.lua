@@ -172,6 +172,7 @@ local function scanRetail()
       -- et son infobulle sont les bonnes (le sort de fabrication a une icône générique).
       local t = M.Token("i", outputItem(id, r)) or M.Token("s", id)
       if t then
+        ns:SetRecipeID(t, id)
         local reagents = ns:RetailReagents(id)
         if reagents and #reagents > 0 then ns:StoreReagents(t, reagents) end
         local c = category(r.categoryID)
@@ -202,6 +203,7 @@ local function convertOwnTokens()
         local item = M.Token("i", outputItem(id))
         if item then
           t, touched = item, true
+          ns:SetRecipeID(t, id)
           local reagents = ns:RetailReagents(id)
           if reagents and #reagents > 0 then ns:StoreReagents(t, reagents) end
         end

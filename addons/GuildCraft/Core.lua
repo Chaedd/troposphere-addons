@@ -132,6 +132,21 @@ function ns:Reagents(token)
   end
 end
 
+-- Numéro de la recette (son sort de fabrication) : il faut le connaître pour la suivre.
+-- Une recette rangée sous son sort le donne directement ; pour un objet, on l'apprend en
+-- lisant sa fenêtre de métier, ou d'un membre de la guilde qui l'a lue.
+function ns:SetRecipeID(token, id)
+  if not token or not M.ValidID(id) or GuildCraftDB.recipeOf[token] == id then return end
+  GuildCraftDB.recipeOf[token] = id
+  if self.window and self.window:IsShown() then self:Changed() end
+end
+
+function ns:RecipeID(token)
+  local kind, id = M.ParseToken(token)
+  if kind == "s" then return id end
+  return GuildCraftDB.recipeOf[token]
+end
+
 -- Oublie les membres muets depuis trop longtemps et les données abîmées.
 local function prune(guild)
   local limit = GetServerTime() - KEEP_DAYS * 86400
@@ -204,6 +219,8 @@ frame:SetScript("OnEvent", function(_, event, ...)
     GuildCraftCharDB = GuildCraftCharDB or {}
     GuildCraftCharDB.profs = GuildCraftCharDB.profs or {}
     GuildCraftDB.reagents = GuildCraftDB.reagents or {}
+    GuildCraftDB.recipeOf = GuildCraftDB.recipeOf or {}
+    GuildCraftCharDB.tracked = GuildCraftCharDB.tracked or {}
     -- Version 1.0 : recettes sans catégorie ; elles seront rangées à la prochaine ouverture du métier.
     for _, own in pairs(GuildCraftCharDB.profs) do
       if type(own.seq) ~= "table" then
@@ -227,6 +244,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
     ns:InitScan()
     ns:InitSync()
     ns:InitMinimap()
+    ns:InitTrack()
     if C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() elseif GuildRoster then GuildRoster() end
     ns:Print("v" .. ns.version .. " chargé. /guildcraft pour ouvrir la fenêtre.")
     if not next(ns.char.profs) then

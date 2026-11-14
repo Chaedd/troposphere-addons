@@ -152,10 +152,12 @@ function M.FlattenLayout(cats, lists, max)
   return seq
 end
 
--- Composants d'une recette : "<jeton>|2c4x3;1kpx1" (objet en base 36 × quantité), "-" si aucun.
+-- Composants d'une recette : "<jeton>|2c4x3;1kpx1|<recette>" (objet en base 36 × quantité,
+-- « - » si aucun ; puis le numéro de la recette en base 36, vide s'il est inconnu).
+-- Le numéro de recette sert à la suivre dans la colonne d'objectifs.
 M.MAX_REAGENTS = 12
 
-function M.EncodeReagents(token, list)
+function M.EncodeReagents(token, list, recipeID)
   local items = {}
   for _, r in ipairs(list or {}) do
     if M.ValidID(r.id) and type(r.n) == "number" and r.n >= 1 and r.n < 1000 then
@@ -164,12 +166,15 @@ function M.EncodeReagents(token, list)
     if #items >= M.MAX_REAGENTS then break end
   end
   return token .. "|" .. (#items > 0 and table.concat(items, ";") or "-")
+    .. "|" .. (M.ValidID(recipeID) and M.ToBase36(recipeID) or "")
 end
 
 function M.DecodeReagents(s)
   if type(s) ~= "string" or #s > 255 then return nil end
-  local token, body = s:match("^([^|]+)|(.+)$")
+  local token, body, recipe = s:match("^([^|]+)|([^|]+)|?([0-9a-z]*)$")
   if not token or not M.ParseToken(token) then return nil end
+  recipe = recipe ~= "" and tonumber(recipe, 36) or nil
+  if recipe and not M.ValidID(recipe) then recipe = nil end
   local list = {}
   if body ~= "-" then
     for item in body:gmatch("[^;]+") do
@@ -180,7 +185,7 @@ function M.DecodeReagents(s)
       if #list > M.MAX_REAGENTS then return nil end
     end
   end
-  return token, list
+  return token, list, recipe
 end
 
 function M.Count(set)
