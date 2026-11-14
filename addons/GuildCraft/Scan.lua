@@ -1,13 +1,19 @@
 -- GuildCraft : lecture de mes métiers.
--- Les recettes ne se lisent que fenêtre de métier ouverte. Sur Classic, la fenêtre peut
--- être filtrée (catégories repliées, « composants disponibles ») : on ajoute alors ce qu'on
--- voit à ce qu'on savait déjà, sans rien retirer. Une recette ne s'oublie pas, sauf en
--- abandonnant le métier : on repart de zéro si le rang baisse ou si le métier disparaît.
+-- Les recettes ne se lisent que fenêtre de métier ouverte. On garde leur rangement : la
+-- catégorie et l'ordre de la fenêtre, pour l'afficher pareil. On note aussi les composants.
+-- Sur Classic, la fenêtre peut être filtrée (catégories repliées, « composants
+-- disponibles ») : on fusionne alors ce qu'on voit avec ce qu'on savait déjà, sans rien
+-- retirer. Une recette ne s'oublie pas, sauf en abandonnant le métier : on repart de zéro
+-- si le rang baisse ou si le métier disparaît.
 local _, ns = ...
 local M = ns.Model
 
+local function linkItemID(link)
+  return type(link) == "string" and tonumber(link:match("|Hitem:(%d+)")) or nil
+end
+
 local function itemToken(link)
-  local id = type(link) == "string" and tonumber(link:match("|Hitem:(%d+)"))
+  local id = linkItemID(link)
   return id and M.Token("i", id)
 end
 
@@ -18,22 +24,30 @@ local function spellToken(link)
 end
 
 -- Enregistre ce que je sais d'un métier ; complete = la liste lue est entière.
-function ns:UpdateOwn(p, rank, max, found, complete)
+function ns:UpdateOwn(p, rank, max, seq, complete)
   local own = self.char.profs[p]
-  local set = {}
   if own and not complete and not (rank and own.rank and rank < own.rank) then
-    for t in pairs(own.r or {}) do set[t] = true end
+    local cats, lists = M.MergeLayouts({ seq, own.seq or {} })
+    seq = M.FlattenLayout(cats, lists, M.MAX_RECIPES)
   end
-  local n = M.Count(set)
-  for t in pairs(found) do
-    if not set[t] and n < M.MAX_RECIPES then set[t] = true; n = n + 1 end
-  end
-  local hash = M.Hash(set)
+  local hash = M.Hash(seq)
   rank, max = rank or (own and own.rank) or 0, max or (own and own.max) or 0
   if own and own.hash == hash and own.rank == rank and own.max == max then return end
-  self.char.profs[p] = { rank = rank, max = max, r = set, n = n, hash = hash }
+  self.char.profs[p] = { rank = rank, max = max, seq = seq, n = #seq, hash = hash }
   self:MirrorOwn()
   self:Announce()
+end
+
+-- Composants lus dans la fenêtre ; nil si l'un d'eux n'est pas encore connu du jeu.
+local function readReagents(count, info, link)
+  local list = {}
+  for j = 1, count or 0 do
+    local _, _, n = info(j)
+    local id = linkItemID(link(j))
+    if not id or not n then return nil end
+    list[#list + 1] = { id = id, n = n }
+  end
+  return list
 end
 
 -- Classic : fenêtre de métier (TradeSkill).
@@ -43,16 +57,25 @@ local function scanTradeSkill()
   local name, rank, max = GetTradeSkillLine()
   local p = ns:ProfessionByName(name)
   if not p then return end
-  local found = {}
+  local seq, cat = {}, ""
   for i = 1, GetNumTradeSkills() do
     local rname, kind = GetTradeSkillInfo(i)
-    if rname and kind ~= "header" and kind ~= "subheader" then
+    if kind == "header" or kind == "subheader" then
+      cat = rname or ""
+    elseif rname then
       local t = itemToken(GetTradeSkillItemLink and GetTradeSkillItemLink(i))
         or spellToken(GetTradeSkillRecipeLink and GetTradeSkillRecipeLink(i))
-      if t then found[t] = true end
+      if t then
+        seq[#seq + 1] = { t = t, c = cat }
+        if GetTradeSkillNumReagents and GetTradeSkillReagentItemLink then
+          ns:StoreReagents(t, readReagents(GetTradeSkillNumReagents(i),
+            function(j) return GetTradeSkillReagentInfo(i, j) end,
+            function(j) return GetTradeSkillReagentItemLink(i, j) end))
+        end
+      end
     end
   end
-  ns:UpdateOwn(p, rank, max, found, false)
+  ns:UpdateOwn(p, rank, max, seq, false)
 end
 
 -- Classic : enchantement passe par l'ancienne fenêtre « Craft ».
@@ -61,17 +84,43 @@ local function scanCraft()
   local name, rank, max = GetCraftDisplaySkillLine()
   local p = ns:ProfessionByName(name)
   if not p then return end
-  local found = {}
+  local seq, cat = {}, ""
   for i = 1, GetNumCrafts() do
     local cname, _, kind = GetCraftInfo(i)
-    if cname and kind ~= "header" then
+    if kind == "header" then
+      cat = cname or ""
+    elseif cname then
       local link = GetCraftItemLink and GetCraftItemLink(i)
       local t = spellToken(link) or itemToken(link)
         or spellToken(GetCraftRecipeLink and GetCraftRecipeLink(i))
-      if t then found[t] = true end
+      if t then
+        seq[#seq + 1] = { t = t, c = cat }
+        if GetCraftNumReagents and GetCraftReagentItemLink then
+          ns:StoreReagents(t, readReagents(GetCraftNumReagents(i),
+            function(j) return GetCraftReagentInfo(i, j) end,
+            function(j) return GetCraftReagentItemLink(i, j) end))
+        end
+      end
     end
   end
-  ns:UpdateOwn(p, rank, max, found, false)
+  ns:UpdateOwn(p, rank, max, seq, false)
+end
+
+-- Retail : composants lus dans le schéma de la recette, sans fenêtre ouverte.
+function ns:RetailReagents(recipeID)
+  local T = C_TradeSkillUI
+  if not (T and T.GetRecipeSchematic) then return nil end
+  local ok, schematic = pcall(T.GetRecipeSchematic, recipeID, false)
+  if not ok or type(schematic) ~= "table" then return nil end
+  local list = {}
+  for _, slot in ipairs(schematic.reagentSlotSchematics or {}) do
+    local basic = Enum and Enum.CraftingReagentType and Enum.CraftingReagentType.Basic
+    local first = slot.reagents and slot.reagents[1]
+    if first and first.itemID and (basic == nil or slot.reagentType == basic) then
+      list[#list + 1] = { id = first.itemID, n = slot.quantityRequired or 1 }
+    end
+  end
+  return list
 end
 
 -- Retail : la liste des recettes est complète, même avec un filtre.
@@ -87,15 +136,34 @@ local function scanRetail()
   local child = T.GetChildProfessionInfo and T.GetChildProfessionInfo()
   local rank = (child and child.skillLevel) or base.skillLevel
   local max = (child and child.maxSkillLevel) or base.maxSkillLevel
-  local found = {}
-  for _, id in ipairs(T.GetAllRecipeIDs() or {}) do
+
+  local cats = {}
+  local function category(id)
+    if not id then return { name = "", order = 0 } end
+    if cats[id] == nil then
+      local info = T.GetCategoryInfo and T.GetCategoryInfo(id)
+      cats[id] = { name = info and info.name or "", order = info and info.uiOrder or 0 }
+    end
+    return cats[id]
+  end
+  local list = {}
+  for index, id in ipairs(T.GetAllRecipeIDs() or {}) do
     local r = T.GetRecipeInfo(id)
     if r and r.learned and not r.isRecraft and not r.isDummyRecipe then
       local t = M.Token("s", id)
-      if t then found[t] = true end
+      if t then
+        local c = category(r.categoryID)
+        list[#list + 1] = { t = t, c = c.name, order = c.order, index = index }
+      end
     end
   end
-  ns:UpdateOwn(p, rank, max, found, true)
+  table.sort(list, function(a, b)
+    if a.order ~= b.order then return a.order < b.order end
+    return a.index < b.index
+  end)
+  local seq = {}
+  for _, e in ipairs(list) do seq[#seq + 1] = { t = e.t, c = e.c } end
+  ns:UpdateOwn(p, rank, max, seq, true)
 end
 
 -- Rangs sans ouvrir de fenêtre, et métiers abandonnés.
@@ -122,7 +190,7 @@ function ns:RefreshOwnRanks()
     local s = seen[p]
     if s then
       if s.rank and s.rank < (own.rank or 0) then
-        own.r, own.n, own.hash = {}, 0, M.Hash({})
+        own.seq, own.n, own.hash = {}, 0, M.Hash({})
         changed = true
       end
       if s.rank and (s.rank ~= own.rank or s.max ~= own.max) then

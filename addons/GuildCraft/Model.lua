@@ -53,14 +53,134 @@ function M.SortedTokens(set)
   return list
 end
 
--- Empreinte d'un ensemble de recettes : deux membres qui ont la même savent les mêmes.
-function M.Hash(set)
+-- Une liste de recettes est rangée comme dans la fenêtre de métier : une suite de
+-- { t = jeton, c = catégorie }, dans l'ordre du jeu. Sur le canal, la catégorie passe
+-- en marqueur « =Nom » devant ses recettes.
+function M.CleanCategory(name)
+  if type(name) ~= "string" then return "" end
+  name = name:gsub("[,|;=%c]", " "):match("^%s*(.-)%s*$")
+  if #name > 40 then name = name:sub(1, 40) end
+  return name
+end
+
+function M.SeqItems(seq)
+  local items, cat = {}, nil
+  for _, e in ipairs(seq or {}) do
+    local c = M.CleanCategory(e.c)
+    if c ~= cat then
+      cat = c
+      items[#items + 1] = "=" .. c
+    end
+    items[#items + 1] = e.t
+  end
+  return items
+end
+
+function M.ItemsToSeq(items)
+  local seq, seen, cat = {}, {}, ""
+  for _, item in ipairs(items) do
+    if item:sub(1, 1) == "=" then
+      cat = item:sub(2)
+    elseif not seen[item] then
+      seen[item] = true
+      seq[#seq + 1] = { t = item, c = cat }
+    end
+  end
+  return seq
+end
+
+function M.SeqSet(seq)
+  local set = {}
+  for _, e in ipairs(seq or {}) do set[e.t] = true end
+  return set
+end
+
+-- Ancienne sauvegarde (jetons sans ordre) → liste rangée, sans catégorie.
+function M.SetToSeq(set)
+  local seq = {}
+  for _, t in ipairs(M.SortedTokens(set)) do seq[#seq + 1] = { t = t, c = "" } end
+  return seq
+end
+
+-- Empreinte d'une liste rangée : deux membres qui ont la même savent les mêmes recettes.
+function M.Hash(seq)
   local h = 5381
-  for _, t in ipairs(M.SortedTokens(set)) do
-    for i = 1, #t do h = (h * 33 + t:byte(i)) % 2147483647 end
+  for _, item in ipairs(M.SeqItems(seq)) do
+    for i = 1, #item do h = (h * 33 + item:byte(i)) % 2147483647 end
     h = (h * 33 + 44) % 2147483647
   end
   return M.ToBase36(h)
+end
+
+-- Fusionne plusieurs listes rangées en gardant l'ordre de chacune : une recette inconnue
+-- se place juste après celle qui la précède dans sa liste, une catégorie aussi.
+-- La première liste qui donne une catégorie à une recette l'emporte.
+-- Renvoie les catégories dans l'ordre, et pour chacune ses jetons dans l'ordre.
+function M.MergeLayouts(layouts)
+  local cats, lists, catOf = {}, {}, {}
+  local function indexOf(list, value)
+    for i, v in ipairs(list) do if v == value then return i end end
+  end
+  for _, seq in ipairs(layouts) do
+    local prevCat, prevInCat = nil, {}
+    for _, e in ipairs(seq) do
+      local c = catOf[e.t] or M.CleanCategory(e.c)
+      if not lists[c] then
+        local pos = prevCat and indexOf(cats, prevCat)
+        table.insert(cats, pos and pos + 1 or #cats + 1, c)
+        lists[c] = {}
+      end
+      if not catOf[e.t] then
+        catOf[e.t] = c
+        local after = prevInCat[c] and indexOf(lists[c], prevInCat[c])
+        table.insert(lists[c], after and after + 1 or 1, e.t)
+      end
+      prevCat, prevInCat[c] = c, e.t
+    end
+  end
+  return cats, lists
+end
+
+function M.FlattenLayout(cats, lists, max)
+  local seq = {}
+  for _, c in ipairs(cats) do
+    for _, t in ipairs(lists[c]) do
+      if max and #seq >= max then return seq end
+      seq[#seq + 1] = { t = t, c = c }
+    end
+  end
+  return seq
+end
+
+-- Composants d'une recette : "<jeton>|2c4x3;1kpx1" (objet en base 36 × quantité), "-" si aucun.
+M.MAX_REAGENTS = 12
+
+function M.EncodeReagents(token, list)
+  local items = {}
+  for _, r in ipairs(list or {}) do
+    if M.ValidID(r.id) and type(r.n) == "number" and r.n >= 1 and r.n < 1000 then
+      items[#items + 1] = M.ToBase36(r.id) .. "x" .. math.floor(r.n)
+    end
+    if #items >= M.MAX_REAGENTS then break end
+  end
+  return token .. "|" .. (#items > 0 and table.concat(items, ";") or "-")
+end
+
+function M.DecodeReagents(s)
+  if type(s) ~= "string" or #s > 255 then return nil end
+  local token, body = s:match("^([^|]+)|(.+)$")
+  if not token or not M.ParseToken(token) then return nil end
+  local list = {}
+  if body ~= "-" then
+    for item in body:gmatch("[^;]+") do
+      local id, n = item:match("^([1-9a-z][0-9a-z]*)x(%d+)$")
+      id, n = id and tonumber(id, 36), tonumber(n)
+      if not M.ValidID(id) or not n or n < 1 or n >= 1000 then return nil end
+      list[#list + 1] = { id = id, n = n }
+      if #list > M.MAX_REAGENTS then return nil end
+    end
+  end
+  return token, list
 end
 
 function M.Count(set)
@@ -128,9 +248,9 @@ function M.DecodeRequest(s)
   return key, p, hash
 end
 
--- Données : "<métier>|<empreinte>|<morceau>|<total>|i1a,s2b,…".
-function M.EncodeData(p, hash, set)
-  local chunks = M.Chunk(M.SortedTokens(set))
+-- Données : "<métier>|<empreinte>|<morceau>|<total>|=Potions,i1a,s2b,=Élixirs,…".
+function M.EncodeData(p, hash, seq)
+  local chunks = M.Chunk(M.SeqItems(seq))
   local out = {}
   for i, c in ipairs(chunks) do out[i] = p .. "|" .. hash .. "|" .. i .. "|" .. #chunks .. "|" .. c end
   return out
@@ -142,13 +262,17 @@ function M.DecodeData(s)
   p, i, n = tonumber(p), tonumber(i), tonumber(n)
   if not validNum(p, 99999) or not validHash(hash) or not validNum(n, M.MAX_PARTS)
     or not validNum(i, n) or i < 1 then return nil end
-  local tokens = {}
+  local items = {}
   for t in body:gmatch("[^,]+") do
-    if not M.ParseToken(t) then return nil end
-    tokens[#tokens + 1] = t
+    if t:sub(1, 1) == "=" then
+      if #t > 41 or t:find("[|;=%c]", 2) then return nil end
+    elseif not M.ParseToken(t) then
+      return nil
+    end
+    items[#items + 1] = t
   end
-  if #tokens == 0 then return nil end
-  return p, hash, i, n, tokens
+  if #items == 0 then return nil end
+  return p, hash, i, n, items
 end
 
 -- Noms : même règle que QuestChums. Sur Forever, un personnage s'appelle « Prénom Nom »,

@@ -69,42 +69,57 @@ local function qualityColor(q)
   return c and c.hex and c.hex:gsub("^|c", "") or "ffffffff"
 end
 
--- Recettes connues de la guilde pour un métier, avec leurs artisans.
+-- Recettes connues de la guilde pour un métier, rangées comme dans la fenêtre de métier :
+-- par catégorie, dans l'ordre du jeu. Renvoie les groupes { cat, entries } et la liste à plat.
 function ns:GuildRecipes(p, filter)
-  local byToken, list = {}, {}
+  local byToken, layouts, keys = {}, {}, {}
   local members = self.guild and self.guild.members or {}
   local now = GetServerTime()
   for key, r in pairs(self.roster) do
     local m = members[key]
     local pr = m and m.profs and m.profs[p]
     local me = key == self.playerKey
-    if pr and pr.r and (r.online or me or self.options.showOffline) then
+    if pr and pr.seq and (r.online or me or self.options.showOffline) then
+      keys[#keys + 1] = key
       local crafter = {
         name = r.name, class = r.class, online = r.online, me = me,
         rank = pr.rank, max = pr.max, age = now - (m.t or now),
       }
-      for t in pairs(pr.r) do
-        local e = byToken[t]
-        if not e then
-          e = { token = t, crafters = {} }
-          byToken[t] = e
-          list[#list + 1] = e
+      for _, e in ipairs(pr.seq) do
+        local entry = byToken[e.t]
+        if not entry then
+          entry = { token = e.t, crafters = {} }
+          byToken[e.t] = entry
         end
-        e.crafters[#e.crafters + 1] = crafter
+        entry.crafters[#entry.crafters + 1] = crafter
       end
     end
   end
-  local out = {}
-  for _, e in ipairs(list) do
-    e.info = recipe(e.token)
-    e.sortName = e.info.name:lower()
-    if not filter or e.sortName:find(filter, 1, true) then out[#out + 1] = e end
-  end
-  table.sort(out, function(a, b)
-    if a.sortName ~= b.sortName then return a.sortName < b.sortName end
-    return a.token < b.token
+  -- Mon rangement d'abord (c'est celui de ma fenêtre), puis celui des autres, toujours dans
+  -- le même ordre pour que la liste ne saute pas d'un rafraîchissement à l'autre.
+  table.sort(keys, function(a, b)
+    if (a == self.playerKey) ~= (b == self.playerKey) then return a == self.playerKey end
+    return a < b
   end)
-  return out
+  for _, key in ipairs(keys) do layouts[#layouts + 1] = members[key].profs[p].seq end
+  local cats, lists = M.MergeLayouts(layouts)
+
+  local groups, flat = {}, {}
+  for _, c in ipairs(cats) do
+    local group = { cat = c, entries = {} }
+    for _, t in ipairs(lists[c]) do
+      local entry = byToken[t]
+      if entry then
+        entry.info = recipe(t)
+        if not filter or entry.info.name:lower():find(filter, 1, true) then
+          group.entries[#group.entries + 1] = entry
+          flat[#flat + 1] = entry
+        end
+      end
+    end
+    if #group.entries > 0 then groups[#groups + 1] = group end
+  end
+  return groups, flat
 end
 
 -- Métiers pour lesquels la guilde a au moins une recette.
@@ -115,7 +130,7 @@ function ns:GuildProfessions()
     local m = members[key]
     if m and m.profs and (r.online or key == self.playerKey or self.options.showOffline) then
       for p, pr in pairs(m.profs) do
-        if self.ProfessionsByID[p] and pr.r and next(pr.r) then count[p] = (count[p] or 0) + 1 end
+        if self.ProfessionsByID[p] and pr.seq and #pr.seq > 0 then count[p] = (count[p] or 0) + 1 end
       end
     end
   end
@@ -162,6 +177,36 @@ local function linkInChat(info)
   if ChatEdit_InsertLink then ChatEdit_InsertLink(info.link) end
 end
 
+local GetItemCountFn = (C_Item and C_Item.GetItemCount) or GetItemCount
+
+-- Composants : nom, quantité, et combien j'en ai (sacs et banque).
+local function reagentLines(lines, token)
+  lines[#lines + 1] = color(COLORS.header, "Composants")
+  local list = ns:Reagents(token)
+  if not list then
+    ns:AskReagents(token)
+    lines[#lines + 1] = color(COLORS.dim, "   Demandés à la guilde… Un membre qui a ouvert ce métier répondra.")
+    return
+  end
+  if #list == 0 then
+    lines[#lines + 1] = color(COLORS.dim, "   Aucun.")
+    return
+  end
+  for _, r in ipairs(list) do
+    local name, _, quality = GetItemInfoFn(r.id)
+    if not name then
+      waiting[r.id] = true
+      if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, r.id) end
+    end
+    local icon = GetItemIconFn and GetItemIconFn(r.id)
+    local have = GetItemCountFn and GetItemCountFn(r.id, true) or 0
+    local label = color(qualityColor(quality), name or ("Objet n° " .. r.id))
+    local owned = color(have >= r.n and "ff40ff40" or COLORS.dim, "(tu en as " .. have .. ")")
+    lines[#lines + 1] = "   " .. (icon and ("|T" .. icon .. ":14:14|t ") or "") .. label
+      .. color(COLORS.dim, " × ") .. r.n .. "   " .. owned
+  end
+end
+
 function ns:RefreshDetail(e)
   local f = self.window
   if not e then
@@ -192,7 +237,10 @@ function ns:RefreshDetail(e)
       local list = c.online and online or offline
       list[#list + 1] = crafterLine(c)
     end
-    local lines = { color(COLORS.header, "Peuvent la faire maintenant (" .. #online .. ")") }
+    local lines = {}
+    reagentLines(lines, e.token)
+    lines[#lines + 1] = " "
+    lines[#lines + 1] = color(COLORS.header, "Peuvent la faire maintenant (" .. #online .. ")")
     if #online == 0 then lines[#lines + 1] = color(COLORS.dim, "   Personne n'est connecté.") end
     for _, l in ipairs(online) do lines[#lines + 1] = l end
     if #offline > 0 then
@@ -222,6 +270,14 @@ local function acquireRow(f, i)
   row.count = text(row, "", "GameFontHighlightSmall")
   row.count:SetPoint("RIGHT", -4, 0); row.count:SetJustifyH("RIGHT")
   row:SetScript("OnClick", function(self)
+    if self.cat then
+      -- Catégorie : la replier ou la déplier, comme dans la fenêtre de métier.
+      local collapsed = f.collapsed[f.selectedProf] or {}
+      f.collapsed[f.selectedProf] = collapsed
+      collapsed[self.cat] = not collapsed[self.cat] or nil
+      ns:RefreshUI()
+      return
+    end
     if not self.entry then return end
     if IsShiftKeyDown() then linkInChat(self.entry.info); return end
     f.selected[f.selectedProf] = self.entry.token
@@ -281,7 +337,8 @@ function ns:RefreshUI()
   f.right:SetPoint("TOPLEFT", f.left, "TOPRIGHT", 8, 0)
 
   local filter = f.search:GetText():lower():match("^%s*(.-)%s*$")
-  local recipes = f.selectedProf and self:GuildRecipes(f.selectedProf, filter ~= "" and filter or nil) or {}
+  local groups, recipes = {}, {}
+  if f.selectedProf then groups, recipes = self:GuildRecipes(f.selectedProf, filter ~= "" and filter or nil) end
   local selectedToken = f.selectedProf and f.selected[f.selectedProf]
   local selected
   for _, e in ipairs(recipes) do if e.token == selectedToken then selected = e end end
@@ -290,20 +347,42 @@ function ns:RefreshUI()
     if f.selectedProf then f.selected[f.selectedProf] = selected.token end
   end
 
-  for i, e in ipairs(recipes) do
-    local row = acquireRow(f, i)
-    row.entry = e
-    row.icon:SetTexture(e.info.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
-    local name = e.info.kind == "i" and color(qualityColor(e.info.quality), e.info.name) or e.info.name
-    row.label:SetText(name)
-    local online = 0
-    for _, c in ipairs(e.crafters) do if c.online then online = online + 1 end end
-    row.count:SetText(color(online > 0 and "ff40ff40" or COLORS.offline, online) .. color(COLORS.dim, "/" .. #e.crafters))
-    row.selected:SetShown(e == selected)
-    row:Show()
+  local collapsed = f.collapsed[f.selectedProf] or {}
+  local searching = filter ~= ""
+  local showHeaders = #groups > 1 or (groups[1] and groups[1].cat ~= "")
+  local i = 0
+  for _, g in ipairs(groups) do
+    local closed = collapsed[g.cat] and not searching
+    if showHeaders then
+      i = i + 1
+      local row = acquireRow(f, i)
+      row.entry, row.cat = nil, g.cat
+      row.icon:SetTexture(closed and "Interface\\Buttons\\UI-PlusButton-Up" or "Interface\\Buttons\\UI-MinusButton-Up")
+      row.icon:SetTexCoord(0, 1, 0, 1)
+      row.label:SetText(color(COLORS.header, g.cat ~= "" and g.cat or "Autres"))
+      row.count:SetText(color(COLORS.dim, #g.entries))
+      row.selected:Hide()
+      row:Show()
+    end
+    if not closed then
+      for _, e in ipairs(g.entries) do
+        i = i + 1
+        local row = acquireRow(f, i)
+        row.entry, row.cat = e, nil
+        row.icon:SetTexture(e.info.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+        row.icon:SetTexCoord(.08, .92, .08, .92)
+        local name = e.info.kind == "i" and color(qualityColor(e.info.quality), e.info.name) or e.info.name
+        row.label:SetText((showHeaders and "  " or "") .. name)
+        local online = 0
+        for _, c in ipairs(e.crafters) do if c.online then online = online + 1 end end
+        row.count:SetText(color(online > 0 and "ff40ff40" or COLORS.offline, online) .. color(COLORS.dim, "/" .. #e.crafters))
+        row.selected:SetShown(e == selected)
+        row:Show()
+      end
+    end
   end
-  for j = #recipes + 1, #f.rows do f.rows[j]:Hide(); f.rows[j].entry = nil end
-  f.listChild:SetHeight(math.max(1, #recipes * ROW_HEIGHT))
+  for j = i + 1, #f.rows do f.rows[j]:Hide(); f.rows[j].entry, f.rows[j].cat = nil, nil end
+  f.listChild:SetHeight(math.max(1, i * ROW_HEIGHT))
   f.listInfo:SetText(f.selectedProf and (#recipes .. " recette" .. (#recipes > 1 and "s" or "")) or "")
   self:RefreshDetail(selected)
 
@@ -331,7 +410,7 @@ function ns:CreateUI()
   f:SetScript("OnDragStart", f.StartMoving); f:SetScript("OnDragStop", f.StopMovingOrSizing)
   f.TitleText:SetText("GuildCraft — Les recettes de ta guilde")
   tinsert(UISpecialFrames, "GuildCraftWindow")
-  f.rows, f.tabs, f.selected = {}, {}, {}
+  f.rows, f.tabs, f.selected, f.collapsed = {}, {}, {}, {}
 
   f.left = CreateFrame("Frame", nil, f, "InsetFrameTemplate")
   f.left:SetPoint("TOPLEFT", 14, -60); f.left:SetPoint("BOTTOMLEFT", 14, 54); f.left:SetWidth(LIST_WIDTH)

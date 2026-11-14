@@ -3,13 +3,16 @@
 --   R|                           « annoncez vos métiers »
 --   H|<métier>:<rang>:<max>:<nb>:<empreinte>;...   mes métiers (« - » si aucun)
 --   G|<membre>|<métier>|<empreinte>               « <membre>, envoie ta liste pour ce métier »
---   D|<métier>|<empreinte>|<i>|<total>|<jetons>   un morceau de ma liste
+--   D|<métier>|<empreinte>|<i>|<total>|<jetons>   un morceau de ma liste (« =Catégorie » devant ses recettes)
+--   Q|<jeton>                    « qui connaît les composants de cette recette ? »
+--   A|<jeton>|<objet>x<nb>;...   les composants (n'importe quel membre qui les connaît répond)
 --
 -- L'empreinte change dès qu'une recette s'ajoute : on ne redemande une liste que si elle a
 -- changé. Tout passe par la guilde, donc une liste envoyée profite à tous les membres équipés.
 local _, ns = ...
 local M = ns.Model
-local PREFIX = "GUILDCRAFT1"
+-- 2 : listes rangées par catégorie et composants (la version 1.0 n'est plus comprise).
+local PREFIX = "GUILDCRAFT2"
 local SEND_INTERVAL = 0.5
 
 local queue = {}
@@ -103,10 +106,10 @@ local function onAnnounce(key, name, body)
   for _, e in ipairs(list) do
     seen[e.p] = true
     local pr = m.profs[e.p]
-    if not pr then pr = { r = {} }; m.profs[e.p] = pr end
+    if not pr then pr = { seq = {} }; m.profs[e.p] = pr end
     pr.rank, pr.max = e.rank, e.max
     if e.n == 0 then
-      pr.r, pr.n, pr.hash, pr.want = {}, 0, e.hash, nil
+      pr.seq, pr.n, pr.hash, pr.want = {}, 0, e.hash, nil
     elseif pr.hash ~= e.hash then
       pr.want = e.hash
       want(key, e.p, e.hash)
@@ -126,7 +129,7 @@ local function onRequest(body)
   if not own or (own.n or 0) == 0 then return end
   if sentData[p] and now - sentData[p] < 20 then return end
   sentData[p] = now
-  for _, chunk in ipairs(M.EncodeData(p, own.hash, own.r)) do enqueue("D|" .. chunk) end
+  for _, chunk in ipairs(M.EncodeData(p, own.hash, own.seq)) do enqueue("D|" .. chunk) end
 end
 
 local function onData(key, name, body)
@@ -147,21 +150,66 @@ local function onData(key, name, body)
   if part.got < n then return end
   partials[id] = nil
 
-  local set, count = {}, 0
-  for _, list in ipairs(part.parts) do
-    for _, t in ipairs(list) do
-      if not set[t] then set[t] = true; count = count + 1 end
-    end
+  local items = {}
+  for k = 1, n do
+    for _, t in ipairs(part.parts[k]) do items[#items + 1] = t end
   end
-  if count > M.MAX_RECIPES or M.Hash(set) ~= hash then return end
+  local seq = M.ItemsToSeq(items)
+  if #seq > M.MAX_RECIPES or M.Hash(seq) ~= hash then return end
   local m = ns:Member(key, name)
   if not m then return end
   m.t = GetServerTime()
   local pr = m.profs[p]
   if not pr then pr = { rank = 0, max = 0 }; m.profs[p] = pr end
-  pr.r, pr.n, pr.hash = set, count, hash
+  pr.seq, pr.n, pr.hash = seq, #seq, hash
   if pr.want == hash then pr.want = nil end
   ns:Changed()
+end
+
+-- Composants : demandés à la guilde la première fois qu'on regarde une recette.
+local reagentAsked, reagentAnswered = {}, {}
+local reagentPending, reagentScheduled = {}, false
+
+function ns:AskReagents(token)
+  if not self.scope or not M.ParseToken(token) then return end
+  local now = GetTime()
+  if reagentAsked[token] and now - reagentAsked[token] < 60 then return end
+  reagentAsked[token] = now
+  enqueue("Q|" .. token)
+end
+
+local function flushReagents()
+  reagentScheduled = false
+  local now = GetTime()
+  for token in pairs(reagentPending) do
+    local list = GuildCraftDB.reagents[token] or ns:Reagents(token)
+    local recent = reagentAnswered[token] and now - reagentAnswered[token] < 20
+    if list and not recent then
+      reagentAnswered[token] = now
+      enqueue("A|" .. M.EncodeReagents(token, list))
+    end
+  end
+  reagentPending = {}
+end
+
+local function onReagentQuestion(body)
+  if not M.ParseToken(body) then return end
+  reagentAsked[body] = GetTime()
+  if not ns:Reagents(body) then return end
+  reagentPending[body] = true
+  if not reagentScheduled then
+    reagentScheduled = true
+    -- Attente au hasard : le premier qui répond évite aux autres de répéter.
+    C_Timer.After(0.5 + math.random() * 2.5, flushReagents)
+  end
+end
+
+local function onReagentAnswer(body)
+  local token, list = M.DecodeReagents(body)
+  if not token then return end
+  reagentAnswered[token] = GetTime()
+  reagentPending[token] = nil
+  if not GuildCraftDB.reagents[token] then ns:StoreReagents(token, list) end
 end
 
 function ns:Receive(prefix, msg, channel, sender)
@@ -178,7 +226,7 @@ function ns:Receive(prefix, msg, channel, sender)
   rate.n = rate.n + 1
   if rate.n > 30 then return end
 
-  local kind, body = msg:match("^([RHGD])|(.*)$")
+  local kind, body = msg:match("^([RHGDQA])|(.*)$")
   if kind == "R" then
     if not self.lastAnnounce or now - self.lastAnnounce > 15 then self:Announce(1 + math.random() * 3) end
   elseif kind == "H" then
@@ -187,6 +235,10 @@ function ns:Receive(prefix, msg, channel, sender)
     onRequest(body)
   elseif kind == "D" then
     onData(key, name, body)
+  elseif kind == "Q" then
+    onReagentQuestion(body)
+  elseif kind == "A" then
+    onReagentAnswer(body)
   end
 end
 

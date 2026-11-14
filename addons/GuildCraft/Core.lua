@@ -109,9 +109,27 @@ function ns:MirrorOwn()
   m.t = GetServerTime()
   m.profs = {}
   for p, own in pairs(self.char.profs) do
-    m.profs[p] = { rank = own.rank, max = own.max, n = own.n, hash = own.hash, r = own.r }
+    m.profs[p] = { rank = own.rank, max = own.max, n = own.n, hash = own.hash, seq = own.seq }
   end
   self:Changed()
+end
+
+-- Composants : ce sont des données du jeu, les mêmes pour tous, gardées pour toutes les guildes.
+function ns:StoreReagents(token, list)
+  if not token or type(list) ~= "table" then return end
+  local old = GuildCraftDB.reagents[token]
+  GuildCraftDB.reagents[token] = list
+  if not old and self.window and self.window:IsShown() then self:Changed() end
+end
+
+function ns:Reagents(token)
+  local list = GuildCraftDB.reagents[token]
+  if list then return list end
+  local kind, id = M.ParseToken(token)
+  if kind == "s" and self.RetailReagents then
+    list = self:RetailReagents(id)
+    if list and #list > 0 then GuildCraftDB.reagents[token] = list; return list end
+  end
 end
 
 -- Oublie les membres muets depuis trop longtemps et les données abîmées.
@@ -122,7 +140,8 @@ local function prune(guild)
       guild.members[key] = nil
     else
       for p, pr in pairs(m.profs) do
-        if type(pr) ~= "table" or type(pr.r) ~= "table" then m.profs[p] = nil end
+        -- Une liste sans rangement vient de la version 1.0 : elle sera redemandée.
+        if type(pr) ~= "table" or type(pr.seq) ~= "table" then m.profs[p] = nil end
       end
     end
   end
@@ -184,6 +203,15 @@ frame:SetScript("OnEvent", function(_, event, ...)
     GuildCraftDB.options = GuildCraftDB.options or {}
     GuildCraftCharDB = GuildCraftCharDB or {}
     GuildCraftCharDB.profs = GuildCraftCharDB.profs or {}
+    GuildCraftDB.reagents = GuildCraftDB.reagents or {}
+    -- Version 1.0 : recettes sans catégorie ; elles seront rangées à la prochaine ouverture du métier.
+    for _, own in pairs(GuildCraftCharDB.profs) do
+      if type(own.seq) ~= "table" then
+        own.seq = M.SetToSeq(own.r)
+        own.r = nil
+        own.n, own.hash = #own.seq, M.Hash(own.seq)
+      end
+    end
     ns.char = GuildCraftCharDB
     ns.options = GuildCraftDB.options
     for k, v in pairs(ns.defaults) do if ns.options[k] == nil then ns.options[k] = v end end
