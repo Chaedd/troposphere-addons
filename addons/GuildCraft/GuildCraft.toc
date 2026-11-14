@@ -1,0 +1,15 @@
+## Interface: 16001, 120005, 120007
+## Title: GuildCraft
+## Notes: Les recettes que ta guilde sait fabriquer, rangées par métier, et qui peut faire chacune d'elles.
+## Author: Chaedd
+## IconTexture: Interface\Icons\Trade_BlackSmithing
+## Version: 1.0.0
+## SavedVariables: GuildCraftDB
+## SavedVariablesPerCharacter: GuildCraftCharDB
+
+Model.lua
+Core.lua
+Scan.lua
+Sync.lua
+UI.lua
+Minimap.lua
