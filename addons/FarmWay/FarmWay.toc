@@ -3,7 +3,7 @@
 ## Notes: Routes de farm sur la carte et la minicarte, créées en un clic à partir de GatherMate2.
 ## Author: Chaedd
 ## IconTexture: Interface\Icons\INV_Misc_Map_01
-## Version: 1.0.1
+## Version: 1.0.2
 ## SavedVariables: FarmWayDB
 ## OptionalDeps: GatherMate2
 
