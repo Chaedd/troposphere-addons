@@ -457,9 +457,18 @@ local function PlaceButton(b, block)
 	end
 	local scale = block:GetEffectiveScale() / UIParent:GetEffectiveScale()
 	-- même couche que le suivi : les sacs et fenêtres passent devant le bouton
-	local strata, level = block:GetFrameStrata(), block:GetFrameLevel() + 5
-	if b:GetFrameStrata() ~= strata then b:SetFrameStrata(strata) end
-	if b:GetFrameLevel() ~= level then b:SetFrameLevel(level) end
+	-- depuis 1.60.1, GetFrameStrata / GetFrameLevel peuvent renvoyer une valeur
+	-- secrète : la comparer lèverait une erreur Lua, on garde alors la couche actuelle
+	local strata, level = block:GetFrameStrata(), block:GetFrameLevel()
+	if not IsSecret(strata) then
+		local cur = b:GetFrameStrata()
+		if not IsSecret(cur) and cur ~= strata then b:SetFrameStrata(strata) end
+	end
+	if not IsSecret(level) then
+		level = level + 5
+		local cur = b:GetFrameLevel()
+		if not IsSecret(cur) and cur ~= level then b:SetFrameLevel(level) end
+	end
 	b:ClearAllPoints()
 	b:SetPoint("RIGHT", UIParent, "BOTTOMLEFT", left * scale - 2, y * scale)
 	b:Show()

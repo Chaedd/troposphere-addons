@@ -68,8 +68,10 @@ local function badge(owner,name,option,targets)
         badges[owner]=b
     end
     -- Follow the owner's stacking order without changing protected unit frames.
-    b:SetFrameStrata(owner:GetFrameStrata())
-    b:SetFrameLevel(owner:GetFrameLevel()+1)
+    -- Since 1.60.1 these getters can return secret values; skip them rather than erroring.
+    local strata,level=owner:GetFrameStrata(),owner:GetFrameLevel()
+    if not (issecretvalue and issecretvalue(strata)) then b:SetFrameStrata(strata) end
+    if not (issecretvalue and issecretvalue(level)) then b:SetFrameLevel(level+1) end
     b.target,b.targets=name,targets
     b:ClearAllPoints()
     b.icon:Show()

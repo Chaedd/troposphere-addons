@@ -3,7 +3,7 @@
 ## IconTexture: Interface\AddOns\Red Flag\flag
 ## Notes: Signalements partagés entre membres de guilde.
 ## Author: Zalfa
-## Version: 1.0.0
+## Version: 1.0.1
 ## SavedVariables: RedFlagDB
 Model.lua
 Core.lua
